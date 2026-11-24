@@ -186,12 +186,33 @@ let toastTimer;
 function toast(msg, ms = 1800) { const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), ms); }
 function banner(msg, err = false) { const b = $('#banner'); if (!msg) { b.className = 'banner'; return; } b.textContent = msg; b.className = 'banner show' + (err ? ' err' : ''); }
 
-async function api(path, body, method = 'POST') {
-  const r = await fetch(path, { method, headers: { 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
+// PIN (only used when the server is started with REMOTE_PIN)
+const pinStore = {
+  get() { try { return localStorage.getItem('remotePin') || ''; } catch { return ''; } },
+  set(v) { try { v ? localStorage.setItem('remotePin', v) : localStorage.removeItem('remotePin'); } catch {} },
+};
+let pinCancelled = false; // stop background polling from re-prompting after the user cancels
+document.addEventListener('click', () => { pinCancelled = false; }, true);
+function askPin(message) {
+  if (pinCancelled) return false;
+  const p = prompt(message || 'This remote is protected. Enter the PIN:');
+  if (p === null) { pinCancelled = true; banner('PIN required. Tap here to enter it.', true); return false; }
+  pinStore.set(p.trim());
+  return true;
+}
+
+async function api(path, body, method = 'POST', retried = false) {
+  const headers = { 'content-type': 'application/json' };
+  const pin = pinStore.get(); if (pin) headers['x-remote-pin'] = pin;
+  const r = await fetch(path, { method, headers, body: body ? JSON.stringify(body) : undefined });
   const j = await r.json().catch(() => ({}));
+  if (r.status === 401 && j.pinRequired && !retried) {
+    if (askPin(pin ? 'Wrong PIN. Try again:' : undefined)) return api(path, body, method, true);
+  }
   if (!r.ok || j.ok === false) throw new Error(j.error || r.statusText);
   return j;
 }
+$('#banner').addEventListener('click', () => { if (/PIN required/.test($('#banner').textContent)) { pinCancelled = false; if (askPin()) { banner(''); refreshStatus(); } } });
 async function act(path, body) {
   try { await api(path, body); refreshStatus(); }
   catch (e) { toast(e.message); refreshStatus(); }
