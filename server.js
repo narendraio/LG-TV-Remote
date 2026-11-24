@@ -77,7 +77,11 @@ app.post('/api/pointer/scroll', wrap(async (req) => { const t = await ensureConn
 
 app.post('/api/volume/up', wrap(async () => (await ensureConnected()).volumeUp()));
 app.post('/api/volume/down', wrap(async () => (await ensureConnected()).volumeDown()));
-app.post('/api/volume/set', wrap(async (req) => (await ensureConnected()).setVolume(Number(req.body.volume))));
+app.post('/api/volume/set', wrap(async (req) => {
+  const v = Math.round(Number(req.body?.volume));
+  if (!Number.isFinite(v)) throw new Error('volume must be a number');
+  return (await ensureConnected()).setVolume(Math.min(100, Math.max(0, v)));
+}));
 app.post('/api/volume/mute', wrap(async (req) => (await ensureConnected()).setMute(!!req.body.mute)));
 app.get('/api/volume', wrap(async () => (await ensureConnected()).getVolume()));
 
