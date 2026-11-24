@@ -100,6 +100,36 @@ app.get('/api/apps', wrap(async () => {
 app.post('/api/launch', wrap(async (req) => (await ensureConnected()).launch(req.body.id, req.body.params)));
 app.get('/api/foreground', wrap(async () => (await ensureConnected()).foregroundApp()));
 
+// Send a link to the TV: YouTube links open in the YouTube app, everything else in the web browser.
+function youTubeId(u) {
+  const host = u.hostname.replace(/^(www|m|music)\./, '');
+  if (host === 'youtu.be') return u.pathname.slice(1).split('/')[0] || null;
+  if (host === 'youtube.com' || host === 'youtube-nocookie.com') {
+    if (u.searchParams.get('v')) return u.searchParams.get('v');
+    const m = u.pathname.match(/^\/(?:shorts|embed|live|v)\/([\w-]{6,})/);
+    if (m) return m[1];
+  }
+  return null;
+}
+app.post('/api/cast', wrap(async (req) => {
+  const raw = String(req.body?.url || '').trim();
+  const found = raw.match(/https?:\/\/\S+/i)?.[0] || (/^[\w-]+(\.[\w-]+)+(\/\S*)?$/.test(raw) ? `https://${raw}` : null);
+  let u;
+  try { u = new URL(found); } catch { throw new Error('Not a valid http(s) link'); }
+  if (!/^https?:$/.test(u.protocol)) throw new Error('Only http(s) links are supported');
+  const t = await ensureConnected();
+  const vid = youTubeId(u);
+  if (vid && /^[\w-]{6,20}$/.test(vid)) { await t.playYouTube(vid); return { ok: true, opened: 'youtube', videoId: vid }; }
+  await t.openUrl(u.href);
+  return { ok: true, opened: 'browser', url: u.href };
+}));
+
+// Web Share Target: "Share → LG Remote" on Android opens /share?url=...&text=...
+app.get('/share', (req, res) => {
+  const text = [req.query.url, req.query.text, req.query.title].filter(Boolean).join(' ');
+  res.redirect('/?share=' + encodeURIComponent(text));
+});
+
 app.get('/api/inputs', wrap(async () => {
   const r = await (await ensureConnected()).listInputs();
   return { inputs: (r.devices || []).map((d) => ({ id: d.id, label: d.label, icon: d.icon, connected: d.connected })) };

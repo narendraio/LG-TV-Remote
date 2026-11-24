@@ -134,6 +134,12 @@
 
 <!-- MORE -->
 <section class="page" id="page-more">
+  <h3>Send link to TV</h3>
+  <input type="text" id="castUrl" placeholder="Paste a YouTube or web link" autocomplete="off" inputmode="url">
+  <div class="row row3">
+    <button class="k" onclick="castLink()" style="grid-column:span 2">Open on TV</button>
+    <button class="k" onclick="pasteLink()">Paste</button>
+  </div>
   <h3>Trackpad</h3>
   <div class="pad" id="pad">Drag to move the pointer · tap to click · two-finger drag to scroll</div>
   <h3>Type on TV</h3>
@@ -305,6 +311,32 @@ async function connect(ip) {
   clearInterval(poll); refreshStatus();
 }
 async function forget() { await api('/api/forget'); appsLoaded = false; refreshStatus(); }
+
+// Send link to TV
+async function castLink(url) {
+  const el = $('#castUrl');
+  const v = (url ?? el.value).trim();
+  if (!v) { el.focus(); return; }
+  try {
+    const r = await api('/api/cast', { url: v });
+    toast(r.opened === 'youtube' ? 'Playing on YouTube' : 'Opened in TV browser');
+    el.value = '';
+  } catch (e) { toast(e.message, 3500); }
+}
+async function pasteLink() {
+  try { const t = await navigator.clipboard.readText(); if (t) { $('#castUrl').value = t.trim(); castLink(); } }
+  catch { toast('Clipboard not available — paste into the box instead'); $('#castUrl').focus(); }
+}
+$('#castUrl').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); castLink(); } });
+// Arrived via "Share → LG Remote" (Android PWA share target)
+(() => {
+  const shared = new URLSearchParams(location.search).get('share');
+  if (!shared) return;
+  history.replaceState(null, '', '/');
+  showTab('more');
+  $('#castUrl').value = shared;
+  castLink(shared);
+})();
 
 refreshStatus();
 setInterval(refreshStatus, 5000);
