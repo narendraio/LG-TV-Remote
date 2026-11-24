@@ -156,6 +156,18 @@
     <button class="k" data-api="/api/power/screen" data-body='{"on":true}'>Screen on</button>
     <button class="k" onclick="sendToast()">Toast</button>
   </div>
+  <h3>Sleep timer</h3>
+  <div class="muted" id="sleepInfo" style="margin-bottom:10px">Off</div>
+  <div class="row row4">
+    <button class="k" data-sleep="15">15m</button>
+    <button class="k" data-sleep="30">30m</button>
+    <button class="k" data-sleep="60">1h</button>
+    <button class="k" data-sleep="90">90m</button>
+  </div>
+  <div class="row row3">
+    <button class="k" onclick="setSleep(customSleep())">Custom…</button>
+    <button class="k" data-sleep="0" style="grid-column:span 2">Cancel timer</button>
+  </div>
 </section>
 
 <!-- SETTINGS -->
@@ -275,6 +287,28 @@ document.addEventListener('click', (e) => {
 async function sendText() { const t = $('#text'); if (!t.value) return; await act('/api/text', { text: t.value }); t.value = ''; }
 $('#text').addEventListener('keydown', async (e) => { if (e.key === 'Enter') { e.preventDefault(); await sendText(); act('/api/text/enter'); } });
 function sendToast() { const m = prompt('Message to show on TV'); if (m) act('/api/toast', { message: m }); }
+
+// Sleep timer
+let sleepAt = null;
+function renderSleep() {
+  const el = $('#sleepInfo');
+  if (!sleepAt || sleepAt <= Date.now()) { el.textContent = 'Off'; return; }
+  const s = Math.round((sleepAt - Date.now()) / 1000);
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+  const t = new Date(sleepAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  el.textContent = `TV turns off at ${t} (in ${h ? h + 'h ' : ''}${m}m ${String(sec).padStart(2, '0')}s)`;
+}
+async function loadSleep() { try { const r = await api('/api/sleep', null, 'GET'); sleepAt = r.at; renderSleep(); } catch {} }
+async function setSleep(minutes) {
+  if (minutes == null) return;
+  try { const r = await api('/api/sleep', { minutes }); sleepAt = r.at; renderSleep(); toast(minutes ? `Sleep timer set: ${minutes} min` : 'Sleep timer cancelled'); }
+  catch (e) { toast(e.message); }
+}
+function customSleep() { const v = prompt('Turn the TV off in how many minutes?', '45'); const n = Number(v); return v && n > 0 ? n : null; }
+document.addEventListener('click', (e) => { const b = e.target.closest('[data-sleep]'); if (b) { haptic(); setSleep(Number(b.dataset.sleep)); } });
+setInterval(renderSleep, 1000);
+setInterval(loadSleep, 30000);
+loadSleep();
 
 // Settings
 async function refreshStatus() {
