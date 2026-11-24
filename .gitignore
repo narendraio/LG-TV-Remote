@@ -1,0 +1,19 @@
+# Dependencies
+node_modules/
+
+# Local TV pairing data (contains your TV's IP, MAC and pairing key)
+config.json
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Env
+.env
+.env.*

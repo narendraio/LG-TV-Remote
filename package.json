@@ -1,0 +1,29 @@
+{
+  "name": "lg-tv-remote",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Web remote for LG webOS TVs. Runs on your computer, control from any browser on the same Wi-Fi.",
+  "main": "server.js",
+  "type": "module",
+  "license": "MIT",
+  "author": "narendraio",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/narendraio/LG-TV-Remote.git"
+  },
+  "bugs": {
+    "url": "https://github.com/narendraio/LG-TV-Remote/issues"
+  },
+  "homepage": "https://github.com/narendraio/LG-TV-Remote#readme",
+  "keywords": ["lg", "webos", "tv", "remote", "wake-on-lan", "ssap", "smart-tv"],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "ws": "^8.18.0"
+  }
+}

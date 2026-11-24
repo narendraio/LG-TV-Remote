@@ -1,0 +1,313 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0b0c10">
+<title>LG Remote</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon.svg">
+<style>
+  :root{--bg:#0b0c10;--panel:#15171e;--btn:#1f2230;--btn2:#2a2e3f;--fg:#e9ebf2;--dim:#8a8fa3;--accent:#ff3b30;--ok:#34c759;--warn:#ffcc00;--r:16px}
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none}
+  html,body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.3 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;height:100%}
+  body{padding:calc(env(safe-area-inset-top,0px) + 10px) 14px calc(env(safe-area-inset-bottom,0px) + 14px);max-width:440px;margin:0 auto}
+  header{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px}
+  header h1{font-size:17px;margin:0;font-weight:600}
+  .status{display:flex;align-items:center;gap:6px;color:var(--dim);font-size:13px;cursor:pointer}
+  .dot{width:9px;height:9px;border-radius:50%;background:var(--dim)}
+  .dot.connected{background:var(--ok)}.dot.pairing{background:var(--warn);animation:blink 1s infinite}.dot.connecting{background:var(--warn)}
+  @keyframes blink{50%{opacity:.3}}
+  .tabs{display:flex;background:var(--panel);border-radius:12px;padding:4px;margin-bottom:12px}
+  .tabs button{flex:1;background:transparent;border:0;color:var(--dim);padding:8px 0;border-radius:9px;font-size:14px;font-weight:500}
+  .tabs button.active{background:var(--btn2);color:var(--fg)}
+  .page{display:none}.page.active{display:block}
+  button.k{background:var(--btn);border:0;color:var(--fg);border-radius:var(--r);font-size:16px;font-weight:500;display:flex;align-items:center;justify-content:center;transition:background .08s,transform .08s;cursor:pointer}
+  button.k:active,button.k.down{background:var(--btn2);transform:scale(.96)}
+  button.k.accent{background:var(--accent)}button.k.accent:active{background:#d32f2f}
+  button.k svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+  .row{display:grid;gap:10px;margin-bottom:10px}
+  .row3{grid-template-columns:1fr 1fr 1fr}.row4{grid-template-columns:repeat(4,1fr)}
+  .row button.k{height:54px}
+  .mid{display:grid;grid-template-columns:64px minmax(0,1fr) 64px;gap:10px;margin-bottom:10px;align-items:center}
+  .rocker{display:flex;flex-direction:column;background:var(--btn);border-radius:32px;overflow:hidden;height:210px}
+  .rocker button{flex:1;background:transparent;border:0;color:var(--fg);font-size:22px;font-weight:600}
+  .rocker button:active{background:var(--btn2)}
+  .rocker .lbl{text-align:center;font-size:11px;color:var(--dim);letter-spacing:.06em;padding:4px 0}
+  .dpad{position:relative;aspect-ratio:1;width:100%;max-width:280px;margin:0 auto;background:var(--btn);border-radius:50%;overflow:hidden}
+  .dpad button{position:absolute;background:transparent;border:0;color:var(--fg);width:33%;height:33%;display:flex;align-items:center;justify-content:center}
+  .dpad button:active{background:var(--btn2)}
+  .dpad .u{top:0;left:33.5%}.dpad .d{bottom:0;left:33.5%}.dpad .l{left:0;top:33.5%}.dpad .r{right:0;top:33.5%}
+  .dpad .c{left:33.5%;top:33.5%;background:var(--btn2);border-radius:50%;font-weight:600;font-size:15px}
+  .dpad svg{width:26px;height:26px;fill:none;stroke:currentColor;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}
+  .pad{background:var(--panel);border-radius:var(--r);height:220px;display:flex;align-items:center;justify-content:center;color:var(--dim);touch-action:none;margin-bottom:10px;text-align:center;padding:12px}
+  .numpad{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:10px}.numpad button.k{height:52px;font-size:18px}
+  .apps{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+  .apps button{background:var(--btn);border:0;border-radius:14px;padding:8px 4px;color:var(--fg);display:flex;flex-direction:column;align-items:center;gap:6px;font-size:11px}
+  .apps button img{width:44px;height:44px;border-radius:10px;object-fit:cover;background:#000}
+  .apps button span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+  .apps button:active{background:var(--btn2)}
+  .list button{display:block;width:100%;text-align:left;background:var(--btn);border:0;color:var(--fg);padding:14px;border-radius:12px;margin-bottom:8px;font-size:15px}
+  .list button:active{background:var(--btn2)}.list small{color:var(--dim);display:block;margin-top:2px}
+  h3{font-size:13px;color:var(--dim);text-transform:uppercase;letter-spacing:.06em;margin:14px 0 8px}
+  input[type=text]{width:100%;background:var(--btn);border:0;border-radius:12px;color:var(--fg);padding:14px;font-size:16px;margin-bottom:10px;-webkit-user-select:text;user-select:text}
+  .muted{color:var(--dim);font-size:13px;line-height:1.5}
+  .banner{background:#3a2d00;color:#ffe08a;border-radius:12px;padding:12px 14px;margin-bottom:12px;font-size:14px;display:none}
+  .banner.err{background:#3a0f0f;color:#ff9b9b}.banner.show{display:block}
+  .toast{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom,0px) + 24px);transform:translateX(-50%);background:#2a2e3f;color:var(--fg);padding:10px 16px;border-radius:12px;font-size:14px;opacity:0;pointer-events:none;transition:opacity .2s;max-width:90vw}
+  .toast.show{opacity:1}
+  code{background:var(--btn);padding:2px 6px;border-radius:6px;font-size:13px;user-select:text;-webkit-user-select:text}
+</style>
+</head>
+<body>
+<header>
+  <h1 id="title">LG Remote</h1>
+  <div class="status" onclick="showTab('settings')"><span class="dot" id="dot"></span><span id="stateText">not connected</span></div>
+</header>
+<div class="banner" id="banner"></div>
+<div class="tabs">
+  <button class="active" data-tab="remote" onclick="showTab('remote')">Remote</button>
+  <button data-tab="apps" onclick="showTab('apps')">Apps</button>
+  <button data-tab="more" onclick="showTab('more')">More</button>
+  <button data-tab="settings" onclick="showTab('settings')">Setup</button>
+</div>
+
+<!-- REMOTE -->
+<section class="page active" id="page-remote">
+  <div class="row row3">
+    <button class="k accent" data-api="/api/power/off" title="Power off"><svg viewBox="0 0 24 24"><path d="M12 3v9"/><path d="M6.3 6.3a8 8 0 1 0 11.4 0"/></svg></button>
+    <button class="k" data-api="/api/power/on" title="Wake"><svg viewBox="0 0 24 24"><path d="M12 3v3M4.2 6.2l2.1 2.1M3 13h3M18 13h3M17.7 6.2l-2.1 2.1"/><path d="M7 17a5 5 0 0 1 10 0"/><path d="M5 21h14"/></svg></button>
+    <button class="k" data-btn="MUTE"><svg viewBox="0 0 24 24"><path d="M11 5 6 9H3v6h3l5 4z"/><path d="m22 9-6 6M16 9l6 6"/></svg></button>
+  </div>
+  <div class="row row3">
+    <button class="k" data-btn="HOME"><svg viewBox="0 0 24 24"><path d="M3 11 12 3l9 8"/><path d="M5 10v10h14V10"/></svg></button>
+    <button class="k" data-btn="MENU">Settings</button>
+    <button class="k" data-btn="INFO">Info</button>
+  </div>
+  <div class="mid">
+    <div class="rocker">
+      <button data-api="/api/volume/up">+</button>
+      <div class="lbl">VOL</div>
+      <button data-api="/api/volume/down">−</button>
+    </div>
+    <div class="dpad">
+      <button class="u" data-btn="UP"><svg viewBox="0 0 24 24"><path d="m6 15 6-6 6 6"/></svg></button>
+      <button class="l" data-btn="LEFT"><svg viewBox="0 0 24 24"><path d="m15 6-6 6 6 6"/></svg></button>
+      <button class="c" data-btn="ENTER">OK</button>
+      <button class="r" data-btn="RIGHT"><svg viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg></button>
+      <button class="d" data-btn="DOWN"><svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></button>
+    </div>
+    <div class="rocker">
+      <button data-api="/api/channel/up">∧</button>
+      <div class="lbl">CH</div>
+      <button data-api="/api/channel/down">∨</button>
+    </div>
+  </div>
+  <div class="row row3">
+    <button class="k" data-btn="BACK"><svg viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/></svg></button>
+    <button class="k" data-btn="EXIT">Exit</button>
+    <button class="k" data-btn="DASH" title="Dash / Input">Input</button>
+  </div>
+  <div class="row row4">
+    <button class="k" data-api="/api/media/rewind"><svg viewBox="0 0 24 24"><path d="m11 19-8-7 8-7zM21 19l-8-7 8-7z"/></svg></button>
+    <button class="k" data-api="/api/media/play"><svg viewBox="0 0 24 24"><path d="m6 4 14 8-14 8z"/></svg></button>
+    <button class="k" data-api="/api/media/pause"><svg viewBox="0 0 24 24"><path d="M7 4h4v16H7zM13 4h4v16h-4z"/></svg></button>
+    <button class="k" data-api="/api/media/forward"><svg viewBox="0 0 24 24"><path d="m13 5 8 7-8 7zM3 5l8 7-8 7z"/></svg></button>
+  </div>
+  <div class="row row4">
+    <button class="k" data-btn="RED" style="color:#ff5d5d">●</button>
+    <button class="k" data-btn="GREEN" style="color:#5dff8a">●</button>
+    <button class="k" data-btn="YELLOW" style="color:#ffe45d">●</button>
+    <button class="k" data-btn="BLUE" style="color:#6aa8ff">●</button>
+  </div>
+</section>
+
+<!-- APPS -->
+<section class="page" id="page-apps">
+  <h3>Apps</h3>
+  <div class="apps" id="apps"><div class="muted">Loading…</div></div>
+  <h3>Inputs</h3>
+  <div class="list" id="inputs"><div class="muted">Loading…</div></div>
+</section>
+
+<!-- MORE -->
+<section class="page" id="page-more">
+  <h3>Trackpad</h3>
+  <div class="pad" id="pad">Drag to move the pointer · tap to click · two-finger drag to scroll</div>
+  <h3>Type on TV</h3>
+  <input type="text" id="text" placeholder="Type here, press Enter to send" autocomplete="off">
+  <div class="row row3">
+    <button class="k" onclick="sendText()">Send</button>
+    <button class="k" data-api="/api/text/enter">Enter</button>
+    <button class="k" data-api="/api/text/delete">⌫</button>
+  </div>
+  <h3>Number pad</h3>
+  <div class="numpad">
+    <button class="k" data-btn="1">1</button><button class="k" data-btn="2">2</button><button class="k" data-btn="3">3</button>
+    <button class="k" data-btn="4">4</button><button class="k" data-btn="5">5</button><button class="k" data-btn="6">6</button>
+    <button class="k" data-btn="7">7</button><button class="k" data-btn="8">8</button><button class="k" data-btn="9">9</button>
+    <button class="k" data-btn="ASTERISK">*</button><button class="k" data-btn="0">0</button><button class="k" data-btn="CC">CC</button>
+  </div>
+  <h3>Screen</h3>
+  <div class="row row3">
+    <button class="k" data-api="/api/power/screen" data-body='{"on":false}'>Screen off</button>
+    <button class="k" data-api="/api/power/screen" data-body='{"on":true}'>Screen on</button>
+    <button class="k" onclick="sendToast()">Toast</button>
+  </div>
+</section>
+
+<!-- SETTINGS -->
+<section class="page" id="page-settings">
+  <h3>TV</h3>
+  <div class="muted" id="tvInfo">No TV configured.</div>
+  <div style="height:10px"></div>
+  <div class="row row3">
+    <button class="k" onclick="discover()">Find TVs</button>
+    <button class="k" onclick="connect()">Connect</button>
+    <button class="k" onclick="forget()">Forget</button>
+  </div>
+  <div class="list" id="tvs"></div>
+  <h3>Or enter IP manually</h3>
+  <input type="text" id="ip" placeholder="e.g. 192.168.1.20" inputmode="decimal">
+  <button class="k" style="width:100%;height:50px" onclick="connect(document.getElementById('ip').value)">Connect to this IP</button>
+  <h3>How to use from your phone</h3>
+  <div class="muted" id="urls"></div>
+  <div class="muted" style="margin-top:10px">First time: the TV shows a pairing prompt. Choose <b>Yes</b> with the TV's own remote. After that it reconnects automatically.<br><br>For <b>Wake</b> to work while the TV is off, enable <i>Settings → General → Devices → TV On With Mobile → Turn on via Wi‑Fi</i> on the TV (name varies by model).</div>
+</section>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+let status = {};
+let toastTimer;
+function toast(msg, ms = 1800) { const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), ms); }
+function banner(msg, err = false) { const b = $('#banner'); if (!msg) { b.className = 'banner'; return; } b.textContent = msg; b.className = 'banner show' + (err ? ' err' : ''); }
+
+async function api(path, body, method = 'POST') {
+  const r = await fetch(path, { method, headers: { 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || j.ok === false) throw new Error(j.error || r.statusText);
+  return j;
+}
+async function act(path, body) {
+  try { await api(path, body); refreshStatus(); }
+  catch (e) { toast(e.message); refreshStatus(); }
+}
+function haptic() { try { navigator.vibrate && navigator.vibrate(8); } catch {} }
+
+// Buttons: data-btn = remote key via pointer socket, data-api = REST endpoint
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  if (b.dataset.btn) { haptic(); act('/api/button/' + b.dataset.btn); }
+  else if (b.dataset.api) { haptic(); act(b.dataset.api, b.dataset.body ? JSON.parse(b.dataset.body) : undefined); }
+});
+
+// Hold-to-repeat for volume & d-pad
+let repeatTimer, repeatInt;
+document.addEventListener('pointerdown', (e) => {
+  const b = e.target.closest('button');
+  if (!b || !(b.dataset.btn || b.dataset.api)) return;
+  const fire = () => { if (b.dataset.btn) act('/api/button/' + b.dataset.btn); else act(b.dataset.api, b.dataset.body ? JSON.parse(b.dataset.body) : undefined); };
+  const repeatable = /^(UP|DOWN|LEFT|RIGHT)$/.test(b.dataset.btn || '') || /volume|channel/.test(b.dataset.api || '');
+  if (!repeatable) return;
+  repeatTimer = setTimeout(() => { repeatInt = setInterval(fire, 180); }, 450);
+});
+['pointerup', 'pointercancel', 'pointerleave'].forEach((ev) => document.addEventListener(ev, () => { clearTimeout(repeatTimer); clearInterval(repeatInt); }, true));
+
+// Keyboard shortcuts on the Mac
+document.addEventListener('keydown', (e) => {
+  if (e.target.tagName === 'INPUT') return;
+  const map = { ArrowUp: 'UP', ArrowDown: 'DOWN', ArrowLeft: 'LEFT', ArrowRight: 'RIGHT', Enter: 'ENTER', Backspace: 'BACK', Escape: 'EXIT', h: 'HOME', m: 'MUTE', ' ': null };
+  if (e.key === '+' || e.key === '=') { e.preventDefault(); return act('/api/volume/up'); }
+  if (e.key === '-' || e.key === '_') { e.preventDefault(); return act('/api/volume/down'); }
+  if (e.key === ' ') { e.preventDefault(); return act('/api/media/pause'); }
+  if (/^[0-9]$/.test(e.key)) return act('/api/button/' + e.key);
+  const k = map[e.key]; if (k) { e.preventDefault(); act('/api/button/' + k); }
+});
+
+// Tabs
+function showTab(name) {
+  document.querySelectorAll('.tabs button').forEach((b) => b.classList.toggle('active', b.dataset.tab === name));
+  document.querySelectorAll('.page').forEach((p) => p.classList.toggle('active', p.id === 'page-' + name));
+  if (name === 'apps') loadApps();
+  if (name === 'settings') refreshStatus();
+}
+
+// Apps & inputs
+let appsLoaded = false;
+async function loadApps() {
+  if (appsLoaded) return;
+  try {
+    const { apps } = await api('/api/apps', null, 'GET');
+    $('#apps').innerHTML = apps.map((a) => `<button data-launch="${a.id}"><img src="${a.icon || ''}" onerror="this.style.visibility='hidden'"><span>${a.title}</span></button>`).join('') || '<div class="muted">No apps</div>';
+    appsLoaded = true;
+  } catch (e) { $('#apps').innerHTML = `<div class="muted">${e.message}</div>`; }
+  try {
+    const { inputs } = await api('/api/inputs', null, 'GET');
+    $('#inputs').innerHTML = inputs.map((i) => `<button data-input="${i.id}">${i.label}<small>${i.connected ? 'connected' : 'not connected'}</small></button>`).join('') || '<div class="muted">No inputs</div>';
+  } catch (e) { $('#inputs').innerHTML = `<div class="muted">${e.message}</div>`; }
+}
+document.addEventListener('click', (e) => {
+  const a = e.target.closest('[data-launch]'); if (a) { haptic(); act('/api/launch', { id: a.dataset.launch }); toast('Launching ' + a.querySelector('span').textContent); }
+  const i = e.target.closest('[data-input]'); if (i) { haptic(); act('/api/input', { id: i.dataset.input }); }
+});
+
+// Trackpad
+(() => {
+  const pad = $('#pad');
+  const pts = new Map(); let moved = 0, start = 0, lastX = 0, lastY = 0, scrollAcc = 0;
+  pad.addEventListener('pointerdown', (e) => { pad.setPointerCapture(e.pointerId); pts.set(e.pointerId, e); if (pts.size === 1) { moved = 0; start = Date.now(); lastX = e.clientX; lastY = e.clientY; } });
+  pad.addEventListener('pointermove', (e) => {
+    if (!pts.has(e.pointerId)) return;
+    const dx = e.clientX - lastX, dy = e.clientY - lastY; lastX = e.clientX; lastY = e.clientY; moved += Math.abs(dx) + Math.abs(dy);
+    if (pts.size >= 2) { scrollAcc += dy; if (Math.abs(scrollAcc) > 12) { api('/api/pointer/scroll', { dx: 0, dy: scrollAcc > 0 ? -1 : 1 }).catch(() => {}); scrollAcc = 0; } }
+    else if (dx || dy) api('/api/pointer/move', { dx: dx * 1.6, dy: dy * 1.6 }).catch(() => {});
+  });
+  const up = (e) => { const single = pts.size === 1; pts.delete(e.pointerId); if (single && moved < 8 && Date.now() - start < 350) { haptic(); act('/api/pointer/click'); } };
+  pad.addEventListener('pointerup', up); pad.addEventListener('pointercancel', up);
+})();
+
+// Text
+async function sendText() { const t = $('#text'); if (!t.value) return; await act('/api/text', { text: t.value }); t.value = ''; }
+$('#text').addEventListener('keydown', async (e) => { if (e.key === 'Enter') { e.preventDefault(); await sendText(); act('/api/text/enter'); } });
+function sendToast() { const m = prompt('Message to show on TV'); if (m) act('/api/toast', { message: m }); }
+
+// Settings
+async function refreshStatus() {
+  try {
+    status = await api('/api/status', null, 'GET');
+    const dot = $('#dot'); dot.className = 'dot ' + status.state;
+    $('#stateText').textContent = status.state === 'connected' ? (status.name || status.ip) : status.state === 'pairing' ? 'accept on TV…' : status.state === 'connecting' ? 'connecting…' : (status.ip ? 'offline' : 'no TV');
+    $('#tvInfo').innerHTML = status.ip ? `IP <code>${status.ip}</code> · ${status.name || 'LG TV'} · ${status.paired ? 'paired' : 'not paired'} · ${status.state}${status.mac ? ` · MAC <code>${status.mac}</code>` : ''}${status.error ? `<br>Last error: ${status.error}` : ''}` : 'No TV configured. Tap “Find TVs”.';
+    $('#urls').innerHTML = 'Open on any device on this Wi‑Fi:<br>' + status.serverIPs.map((ip) => `<code>http://${ip}:${status.port}</code>`).join('<br>') + '<br><span style="font-size:12px">Tip: on iPhone, Share → “Add to Home Screen” for an app-like remote.</span>';
+    if (status.state === 'pairing') banner('Pairing request sent. On the TV, select “Yes” with the TV remote to allow this device.');
+    else if (!status.ip) banner('No TV configured. Go to Setup and tap “Find TVs”.');
+    else if (status.state === 'disconnected' && status.error) banner('TV not reachable: ' + status.error + '. Is it on and on the same Wi‑Fi? Try “Wake”.', true);
+    else banner('');
+  } catch {}
+}
+async function discover() {
+  $('#tvs').innerHTML = '<div class="muted">Scanning network (up to ~20s)…</div>';
+  try {
+    const { tvs } = await api('/api/discover', null, 'GET');
+    $('#tvs').innerHTML = tvs.length ? tvs.map((t) => `<button onclick="connect('${t.ip}')">${t.name}<small>${t.ip} · via ${t.via}</small></button>`).join('') : '<div class="muted">No LG TVs found. Make sure the TV is on (not standby) and on the same Wi‑Fi, then try again or enter the IP manually.</div>';
+  } catch (e) { $('#tvs').innerHTML = `<div class="muted">${e.message}</div>`; }
+}
+async function connect(ip) {
+  banner('Connecting… if this is the first time, accept the prompt on the TV.');
+  const poll = setInterval(refreshStatus, 1500);
+  try { const r = await api('/api/connect', ip ? { ip } : {}); toast('Connected to ' + (r.name || ip || 'TV')); appsLoaded = false; }
+  catch (e) { toast(e.message, 4000); }
+  clearInterval(poll); refreshStatus();
+}
+async function forget() { await api('/api/forget'); appsLoaded = false; refreshStatus(); }
+
+refreshStatus();
+setInterval(refreshStatus, 5000);
+</script>
+</body>
+</html>
