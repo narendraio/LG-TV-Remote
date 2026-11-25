@@ -6,13 +6,16 @@ import { fileURLToPath } from 'node:url';
 import { LGTV, discover, localIPs, macFromArp, macOf, wakeOnLan } from './lgtv.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const CONFIG = path.join(__dirname, 'config.json');
+const CONFIG = process.env.CONFIG_PATH ? path.resolve(process.env.CONFIG_PATH) : path.join(__dirname, 'config.json');
 const PORT = Number(process.env.PORT || 8080);
 const PIN = (process.env.REMOTE_PIN || '').trim();
 
 let config = { ip: null, clientKey: null, mac: null, name: null };
 try { config = { ...config, ...JSON.parse(fs.readFileSync(CONFIG, 'utf8')) }; } catch {}
-const saveConfig = () => fs.writeFileSync(CONFIG, JSON.stringify(config, null, 2));
+const saveConfig = () => {
+  try { fs.mkdirSync(path.dirname(CONFIG), { recursive: true }); fs.writeFileSync(CONFIG, JSON.stringify(config, null, 2)); }
+  catch (e) { console.log('[config] could not save', CONFIG, '-', e.message); }
+};
 
 let tv = null;
 let connecting = null;

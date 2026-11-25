@@ -22,6 +22,16 @@ Control an LG webOS TV from any browser on the same Wi‑Fi. A tiny Node.js serv
 - Node.js 18 or newer
 - An LG TV running webOS, on the same network as the computer running the server
 
+## Run with Docker
+
+Good for an always-on box like a Raspberry Pi or home server (Linux):
+
+```bash
+docker compose up -d
+```
+
+The container uses **host networking** so TV discovery (SSDP) and Wake-on-LAN broadcasts reach your LAN. Pairing data is kept in a `tv-remote-data` volume. Docker Desktop on macOS/Windows does not support host networking the same way, so there just use `npm start`.
+
 ## Run
 
 ```bash

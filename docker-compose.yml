@@ -1,0 +1,15 @@
+services:
+  tv-remote:
+    build: .
+    container_name: lg-tv-remote
+    restart: unless-stopped
+    # Host networking is required for SSDP discovery and Wake-on-LAN broadcasts.
+    network_mode: host
+    environment:
+      PORT: "8080"
+      # REMOTE_PIN: "1234"
+    volumes:
+      - tv-remote-data:/data
+
+volumes:
+  tv-remote-data:
