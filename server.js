@@ -2,7 +2,7 @@ import express from 'express';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { LGTV, discover, localIPs, macFromArp, wakeOnLan } from './lgtv.js';
+import { LGTV, discover, localIPs, macFromArp, macOf, wakeOnLan } from './lgtv.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CONFIG = path.join(__dirname, 'config.json');
@@ -34,10 +34,33 @@ async function connectTo(ip) {
   return tv;
 }
 
+// Routers often hand the TV a new IP. If the saved IP stops answering, look for
+// an LG TV on the network with the same MAC address and switch to it, keeping
+// the pairing key (keys belong to the TV, not the IP).
+let lastSearch = 0;
+async function findMovedTV() {
+  if (!config.mac || Date.now() - lastSearch < 60_000) return null;
+  lastSearch = Date.now();
+  console.log(`[tv] ${config.ip} not answering, looking for the TV (${config.mac}) on the network…`);
+  for (const { ip } of await discover()) {
+    if (ip !== config.ip && (await macOf(ip)) === config.mac) return ip;
+  }
+  return null;
+}
+
 async function ensureConnected() {
   if (tv?.connected) return tv;
   if (!config.ip) throw new Error('No TV configured. Open Settings and pick your TV.');
-  if (!connecting) connecting = connectTo(config.ip).finally(() => { connecting = null; });
+  if (!connecting) {
+    connecting = connectTo(config.ip).catch(async (err) => {
+      if (err.fromTV) throw err; // the TV answered (e.g. pairing rejected), it hasn't moved
+      const ip = await findMovedTV().catch(() => null);
+      if (!ip) throw err;
+      console.log(`[tv] found the TV at its new address ${ip} (was ${config.ip})`);
+      config.ip = ip; saveConfig(); // keep clientKey: same TV, new IP
+      return connectTo(ip);
+    }).finally(() => { connecting = null; });
+  }
   return connecting;
 }
 

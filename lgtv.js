@@ -286,6 +286,13 @@ export function localIPs() {
   return Object.values(os.networkInterfaces()).flat().filter((n) => n.family === 'IPv4' && !n.internal).map((n) => n.address);
 }
 
+// MAC address of a host; touching a port first makes sure the ARP cache has it.
+export async function macOf(ip) {
+  await portOpen(ip, 3001, 1000);
+  const mac = await macFromArp(ip);
+  return mac ? mac.toLowerCase() : null;
+}
+
 // ---------- Wake on LAN ----------
 export function macFromArp(ip) {
   return new Promise((resolve) => {
