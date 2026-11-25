@@ -4,6 +4,9 @@
   "private": true,
   "description": "Web remote for LG webOS TVs. Runs on your computer, control from any browser on the same Wi-Fi.",
   "main": "server.js",
+  "bin": {
+    "tv": "bin/tv.js"
+  },
   "type": "module",
   "license": "MIT",
   "author": "narendraio",
@@ -20,7 +23,8 @@
     "node": ">=18"
   },
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "tv": "node bin/tv.js"
   },
   "dependencies": {
     "express": "^4.21.2",
