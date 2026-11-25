@@ -247,49 +247,47 @@ document.addEventListener('keydown', (e) => {
   const k = map[e.key]; if (k) { e.preventDefault(); act('/api/button/' + k); }
 });
 
-// Live TV screen preview (pull-based: only captures while visible)
+// Live TV screen preview: one MJPEG stream, open only while the Remote tab is visible
 (() => {
   const box = $('#screen'), img = $('#screenImg'), msg = $('#screenMsg'), badge = $('#screenBadge');
   const fps = $('#screenFps'), toggle = $('#screenToggle');
-  let enabled = true, running = false, lastUrl = null, frames = [];
+  let enabled = true, streaming = false, gotFrame = false, watchdog;
   try { enabled = localStorage.getItem('screenPreview') !== 'off'; } catch {}
   const visible = () => enabled && !document.hidden && $('#page-remote').classList.contains('active');
   const applyToggle = () => {
     box.style.display = enabled ? '' : 'none';
     toggle.textContent = enabled ? 'Hide screen' : 'Show TV screen';
-    fps.textContent = enabled ? fps.textContent : '';
+    if (!enabled) fps.textContent = '';
   };
-  async function loop() {
-    if (running) return;
-    running = true;
-    let fails = 0;
-    while (visible()) {
-      const t0 = performance.now();
-      try {
-        const headers = {};
-        try { const pin = localStorage.getItem('remotePin'); if (pin) headers['x-remote-pin'] = pin; } catch {}
-        const r = await fetch('/api/screen', { cache: 'no-store', headers });
-        if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.statusText);
-        const url = URL.createObjectURL(await r.blob());
-        await new Promise((res) => { img.onload = res; img.onerror = res; img.src = url; });
-        if (lastUrl) URL.revokeObjectURL(lastUrl);
-        lastUrl = url; fails = 0;
-        img.classList.add('on'); msg.style.display = 'none'; box.classList.remove('paused');
-        frames.push(performance.now()); frames = frames.filter((t) => performance.now() - t < 5000);
-        fps.textContent = `${(frames.length / 5).toFixed(1)} fps · no audio`;
-      } catch (e) {
-        fails++;
-        img.classList.remove('on'); box.classList.add('paused');
-        msg.style.display = ''; msg.textContent = status.state === 'connected' ? 'Screen not available: ' + e.message : 'TV is off or not connected';
-        fps.textContent = '';
-      }
-      // ~1 fps max; back off when failing
-      const wait = fails ? Math.min(10000, 2000 * fails) : Math.max(0, 700 - (performance.now() - t0));
-      await new Promise((r) => setTimeout(r, wait));
-    }
-    box.classList.add('paused');
-    running = false;
+  const showMsg = (text) => { msg.textContent = text; msg.style.display = ''; box.classList.add('paused'); };
+  function start() {
+    if (streaming || !visible()) return;
+    streaming = true; gotFrame = false;
+    let pin = ''; try { pin = localStorage.getItem('remotePin') || ''; } catch {}
+    img.src = '/api/screen/stream?t=' + Date.now() + (pin ? '&pin=' + encodeURIComponent(pin) : '');
+    clearTimeout(watchdog);
+    // No picture after a while (TV off / not connected): drop the stream and retry later
+    watchdog = setTimeout(() => {
+      if (gotFrame) return;
+      showMsg(status.state === 'connected' ? 'Waiting for the TV screen…' : 'TV is off or not connected');
+      stop(); setTimeout(start, 4000);
+    }, 8000);
   }
+  function stop() {
+    if (!streaming) return;
+    streaming = false; clearTimeout(watchdog);
+    img.removeAttribute('src'); // closes the stream so the TV stops capturing
+    box.classList.add('paused');
+  }
+  img.addEventListener('load', () => {
+    gotFrame = true; clearTimeout(watchdog);
+    img.classList.add('on'); msg.style.display = 'none'; box.classList.remove('paused');
+  });
+  img.addEventListener('error', () => {
+    if (!streaming) return;
+    stop(); showMsg('Reconnecting to the TV screen…'); setTimeout(start, 2000);
+  });
+  const sync = () => (visible() ? start() : stop());
   async function playback() {
     if (!visible() || status.state !== 'connected') { badge.style.display = 'none'; return; }
     try {
@@ -297,6 +295,8 @@ document.addEventListener('keydown', (e) => {
       const label = { playing: '▶ Playing', paused: '❚❚ Paused', buffering: '… Buffering' }[r.playState];
       badge.textContent = label || '';
       badge.style.display = label ? '' : 'none';
+      fps.textContent = r.screenFps ? `${r.screenFps} fps · no audio` : '';
+      if (r.screenError && !gotFrame) showMsg('Screen not available: ' + r.screenError);
     } catch { badge.style.display = 'none'; }
   }
   box.addEventListener('click', () => {
@@ -309,14 +309,14 @@ document.addEventListener('keydown', (e) => {
   toggle.addEventListener('click', () => {
     enabled = !enabled;
     try { localStorage.setItem('screenPreview', enabled ? 'on' : 'off'); } catch {}
-    applyToggle(); if (enabled) loop();
+    applyToggle(); sync();
   });
-  // Restart when the tab / page becomes visible again
-  document.addEventListener('visibilitychange', () => { if (visible()) loop(); });
-  document.addEventListener('click', (e) => { if (e.target.closest('.tabs button')) setTimeout(() => { if (visible()) loop(); }, 0); });
-  setInterval(playback, 3000);
+  document.addEventListener('visibilitychange', sync);
+  window.addEventListener('pagehide', stop);
+  document.addEventListener('click', (e) => { if (e.target.closest('.tabs button')) setTimeout(sync, 0); });
+  setInterval(playback, 2500);
   applyToggle();
-  loop();
+  sync();
 })();
 
 // Tabs
