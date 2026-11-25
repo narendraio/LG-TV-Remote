@@ -192,6 +192,80 @@ app.get('/api/inputs', wrap(async () => {
 }));
 app.post('/api/input', wrap(async (req) => (await ensureConnected()).switchInput(req.body.id)));
 
+// Live screen. The TV needs ~0.5s per screenshot and handles one at a time, so
+// while anyone is watching we capture back-to-back on the server and push each
+// frame to every viewer over one long-lived MJPEG response (no per-frame round
+// trips from the phone). Nobody watching = no captures.
+const screen = { frame: null, at: 0, seq: 0, error: null, running: false, viewers: 0, lastPull: 0, waiters: [], times: [] };
+const pause = (ms) => new Promise((r) => setTimeout(r, ms));
+const screenWanted = () => screen.viewers > 0 || Date.now() - screen.lastPull < 3000;
+async function captureLoop() {
+  if (screen.running) return;
+  screen.running = true;
+  while (screenWanted()) {
+    try {
+      const img = await (await ensureConnected()).screenshot();
+      screen.frame = img; screen.at = Date.now(); screen.seq++; screen.error = null;
+      screen.times.push(screen.at); screen.times = screen.times.filter((t) => screen.at - t < 5000);
+    } catch (e) {
+      screen.error = e.message;
+      await pause(2000);
+    }
+    for (const wake of screen.waiters.splice(0)) wake();
+  }
+  screen.running = false;
+}
+const nextFrame = (afterSeq, timeoutMs = 8000) => new Promise((resolve) => {
+  if (screen.seq > afterSeq) return resolve();
+  const t = setTimeout(resolve, timeoutMs);
+  screen.waiters.push(() => { clearTimeout(t); resolve(); });
+});
+const screenFps = () => (screen.times.length > 1 ? (screen.times.length - 1) / ((screen.times.at(-1) - screen.times[0]) / 1000) : 0);
+
+// Single frame (used by scripts / fallback).
+app.get('/api/screen', async (req, res) => {
+  screen.lastPull = Date.now();
+  if (!screen.frame || Date.now() - screen.at > 1000) { const seq = screen.seq; captureLoop(); await nextFrame(seq); }
+  if (!screen.frame || Date.now() - screen.at > 10_000) return res.status(503).json({ ok: false, error: screen.error || 'no screen available' });
+  res.set({ 'content-type': 'image/jpeg', 'cache-control': 'no-store' }).send(screen.frame);
+});
+
+// Continuous stream: <img src="/api/screen/stream">
+app.get('/api/screen/stream', async (req, res) => {
+  res.writeHead(200, {
+    'content-type': 'multipart/x-mixed-replace; boundary=frame',
+    'cache-control': 'no-store, no-cache', pragma: 'no-cache', connection: 'keep-alive',
+  });
+  res.socket?.setNoDelay(true);
+  let open = true;
+  screen.viewers++;
+  req.on('close', () => { if (open) { open = false; screen.viewers--; } });
+  captureLoop();
+  // Send the latest frame right away so the picture appears instantly.
+  let sent = screen.seq;
+  if (screen.frame && Date.now() - screen.at < 5000) writeFrame(res, screen.frame);
+  while (open) {
+    // Every pass waits for a newer frame (or the timeout), so this never spins.
+    await nextFrame(sent);
+    if (!open || screen.seq === sent) continue;
+    sent = screen.seq;
+    if (res.writableNeedDrain) continue; // slow phone: skip to the newest frame
+    writeFrame(res, screen.frame);
+  }
+});
+function writeFrame(res, img) {
+  res.write(`--frame\r\nContent-Type: image/jpeg\r\nContent-Length: ${img.length}\r\n\r\n`);
+  res.write(img);
+  res.write('\r\n');
+}
+
+// Is the foreground app playing or paused?
+app.get('/api/playback', wrap(async () => {
+  const r = await (await ensureConnected()).mediaState();
+  const m = (r.foregroundAppInfo || [])[0] || {};
+  return { ok: true, appId: m.appId || null, playState: m.playState || null, screenFps: Math.round(screenFps() * 10) / 10, screenError: screen.error };
+}));
+
 app.post('/api/text', wrap(async (req) => (await ensureConnected()).insertText(String(req.body.text || ''))));
 app.post('/api/text/enter', wrap(async () => (await ensureConnected()).sendEnter()));
 app.post('/api/text/delete', wrap(async (req) => (await ensureConnected()).deleteChars(Number(req.body.count || 1))));

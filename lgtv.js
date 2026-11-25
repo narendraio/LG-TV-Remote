@@ -3,6 +3,8 @@
 import WebSocket from 'ws';
 import dgram from 'node:dgram';
 import net from 'node:net';
+import http from 'node:http';
+import https from 'node:https';
 import os from 'node:os';
 import { execFile } from 'node:child_process';
 import { EventEmitter } from 'node:events';
@@ -220,6 +222,27 @@ export class LGTV extends EventEmitter {
   connectionInfo() { return this.request('ssap://com.webos.service.connectionmanager/getinfo'); }
   screenOff() { return this.request('ssap://com.webos.service.tvpower/power/turnOffScreen', { standbyMode: 'active' }); }
   screenOn() { return this.request('ssap://com.webos.service.tvpower/power/turnOnScreen', { standbyMode: 'active' }); }
+  mediaState() { return this.request('ssap://com.webos.media/getForegroundAppInfo'); }
+
+  // Capture what is on the TV screen right now as a JPEG buffer.
+  async screenshot() {
+    const { imageUri } = await this.request('ssap://tv/executeOneShot');
+    if (!imageUri) throw new Error('TV did not return a screenshot');
+    const u = new URL(imageUri);
+    // Only ever fetch from the TV itself.
+    if (u.hostname !== this.ip) throw new Error('unexpected screenshot host');
+    const lib = u.protocol === 'https:' ? https : http;
+    return new Promise((resolve, reject) => {
+      const req = lib.get(u, { rejectUnauthorized: false, timeout: 5000 }, (res) => {
+        if (res.statusCode !== 200) { res.resume(); return reject(new Error(`screenshot HTTP ${res.statusCode}`)); }
+        const chunks = [];
+        res.on('data', (c) => chunks.push(c));
+        res.on('end', () => resolve(Buffer.concat(chunks)));
+      });
+      req.on('timeout', () => req.destroy(new Error('screenshot timeout')));
+      req.on('error', reject);
+    });
+  }
 }
 
 // ---------- Discovery ----------
