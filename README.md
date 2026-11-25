@@ -53,6 +53,24 @@ The pairing key is saved to `config.json` (git-ignored), so it reconnects automa
 The **Wake** button sends a Wake-on-LAN packet. On the TV enable
 *Settings → General → Devices → TV On With Mobile → Turn on via Wi‑Fi* (menu names vary by model). The MAC address is learned automatically the first time you connect.
 
+## Command line
+
+Control the TV from a terminal, scripts, cron jobs or Siri/Android shortcuts while the server is running:
+
+```bash
+npm run tv -- volume up
+npm run tv -- volume 20
+npm run tv -- launch netflix
+npm run tv -- input hdmi2
+npm run tv -- off
+npm run tv -- help        # all commands
+```
+
+Run `npm link` once to get a global `tv` command (`tv mute`, `tv home`, …).
+To control a server on another machine, set `TV_REMOTE_URL=http://192.168.1.10:8080`.
+
+Every action is also a plain HTTP call, e.g. `curl -X POST http://localhost:8080/api/button/HOME`.
+
 ## Keyboard shortcuts (desktop)
 
 Arrows = navigate · Enter = OK · Backspace = Back · Esc = Exit · `h` = Home · `m` = Mute · `+`/`-` = volume · Space = pause · digits = numbers
