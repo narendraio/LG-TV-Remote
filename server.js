@@ -155,15 +155,15 @@ app.get('/api/screen/stream', async (req, res) => {
   screen.viewers++;
   req.on('close', () => { if (open) { open = false; screen.viewers--; } });
   captureLoop();
-  let sent = -1;
   // Send the latest frame right away so the picture appears instantly.
-  if (screen.frame && Date.now() - screen.at < 5000) { sent = screen.seq; writeFrame(res, screen.frame); }
+  let sent = screen.seq;
+  if (screen.frame && Date.now() - screen.at < 5000) writeFrame(res, screen.frame);
   while (open) {
+    // Every pass waits for a newer frame (or the timeout), so this never spins.
     await nextFrame(sent);
-    if (!open) break;
-    if (screen.seq === sent || !screen.frame) continue;
-    if (res.writableNeedDrain) continue; // slow phone: skip to the newest frame
+    if (!open || screen.seq === sent) continue;
     sent = screen.seq;
+    if (res.writableNeedDrain) continue; // slow phone: skip to the newest frame
     writeFrame(res, screen.frame);
   }
 });
