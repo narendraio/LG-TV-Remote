@@ -106,6 +106,29 @@ app.get('/api/inputs', wrap(async () => {
 }));
 app.post('/api/input', wrap(async (req) => (await ensureConnected()).switchInput(req.body.id)));
 
+// Live screen: a fresh JPEG of what's on the TV. Concurrent viewers share one
+// capture, and frames younger than 300ms are reused, so the TV isn't hammered.
+let shotInFlight = null, lastShot = null;
+app.get('/api/screen', async (req, res) => {
+  try {
+    let img;
+    if (lastShot && Date.now() - lastShot.at < 300) img = lastShot.img;
+    else {
+      shotInFlight ||= (async () => (await ensureConnected()).screenshot())().finally(() => { shotInFlight = null; });
+      img = await shotInFlight;
+      lastShot = { img, at: Date.now() };
+    }
+    res.set({ 'content-type': 'image/jpeg', 'cache-control': 'no-store' }).send(img);
+  } catch (e) { res.status(503).json({ ok: false, error: e.message }); }
+});
+
+// Is the foreground app playing or paused?
+app.get('/api/playback', wrap(async () => {
+  const r = await (await ensureConnected()).mediaState();
+  const m = (r.foregroundAppInfo || [])[0] || {};
+  return { ok: true, appId: m.appId || null, playState: m.playState || null };
+}));
+
 app.post('/api/text', wrap(async (req) => (await ensureConnected()).insertText(String(req.body.text || ''))));
 app.post('/api/text/enter', wrap(async () => (await ensureConnected()).sendEnter()));
 app.post('/api/text/delete', wrap(async (req) => (await ensureConnected()).deleteChars(Number(req.body.count || 1))));

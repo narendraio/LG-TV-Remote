@@ -42,6 +42,17 @@
   .dpad .u{top:0;left:33.5%}.dpad .d{bottom:0;left:33.5%}.dpad .l{left:0;top:33.5%}.dpad .r{right:0;top:33.5%}
   .dpad .c{left:33.5%;top:33.5%;background:var(--btn2);border-radius:50%;font-weight:600;font-size:15px}
   .dpad svg{width:26px;height:26px;fill:none;stroke:currentColor;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}
+  .screen{position:relative;background:#000;border-radius:var(--r);overflow:hidden;aspect-ratio:16/9;margin-bottom:10px;cursor:zoom-in}
+  .screen img{width:100%;height:100%;object-fit:contain;display:block;opacity:0;transition:opacity .2s}
+  .screen img.on{opacity:1}
+  .screen .msg{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#8a8fa3;font-size:13px;text-align:center;padding:12px}
+  .screen .badge{position:absolute;left:8px;top:8px;background:rgba(0,0,0,.6);color:#fff;font-size:12px;padding:3px 8px;border-radius:8px;display:none}
+  .screen .live{position:absolute;right:8px;top:8px;background:rgba(0,0,0,.6);color:#fff;font-size:11px;padding:3px 8px;border-radius:8px;letter-spacing:.06em}
+  .screen .live::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:#ff3b30;margin-right:5px;vertical-align:1px}
+  .screen.paused .live::before{background:#8a8fa3}
+  .screen.full{position:fixed;inset:0;z-index:50;border-radius:0;aspect-ratio:auto;margin:0;cursor:zoom-out}
+  .screenbar{display:flex;justify-content:space-between;align-items:center;margin:-4px 2px 10px;color:var(--dim);font-size:12px}
+  .screenbar button{background:none;border:0;color:var(--dim);font-size:12px;padding:4px 0;cursor:pointer}
   .pad{background:var(--panel);border-radius:var(--r);height:220px;display:flex;align-items:center;justify-content:center;color:var(--dim);touch-action:none;margin-bottom:10px;text-align:center;padding:12px}
   .numpad{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:10px}.numpad button.k{height:52px;font-size:18px}
   .apps{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
@@ -76,6 +87,13 @@
 
 <!-- REMOTE -->
 <section class="page active" id="page-remote">
+  <div class="screen" id="screen" title="Tap for full screen">
+    <img id="screenImg" alt="TV screen">
+    <div class="msg" id="screenMsg">Connecting to TV screen…</div>
+    <div class="badge" id="screenBadge"></div>
+    <div class="live" id="screenLive">LIVE</div>
+  </div>
+  <div class="screenbar"><span id="screenFps"></span><button id="screenToggle">Hide screen</button></div>
   <div class="row row3">
     <button class="k accent" data-api="/api/power/off" title="Power off"><svg viewBox="0 0 24 24"><path d="M12 3v9"/><path d="M6.3 6.3a8 8 0 1 0 11.4 0"/></svg></button>
     <button class="k" data-api="/api/power/on" title="Wake"><svg viewBox="0 0 24 24"><path d="M12 3v3M4.2 6.2l2.1 2.1M3 13h3M18 13h3M17.7 6.2l-2.1 2.1"/><path d="M7 17a5 5 0 0 1 10 0"/><path d="M5 21h14"/></svg></button>
@@ -228,6 +246,78 @@ document.addEventListener('keydown', (e) => {
   if (/^[0-9]$/.test(e.key)) return act('/api/button/' + e.key);
   const k = map[e.key]; if (k) { e.preventDefault(); act('/api/button/' + k); }
 });
+
+// Live TV screen preview (pull-based: only captures while visible)
+(() => {
+  const box = $('#screen'), img = $('#screenImg'), msg = $('#screenMsg'), badge = $('#screenBadge');
+  const fps = $('#screenFps'), toggle = $('#screenToggle');
+  let enabled = true, running = false, lastUrl = null, frames = [];
+  try { enabled = localStorage.getItem('screenPreview') !== 'off'; } catch {}
+  const visible = () => enabled && !document.hidden && $('#page-remote').classList.contains('active');
+  const applyToggle = () => {
+    box.style.display = enabled ? '' : 'none';
+    toggle.textContent = enabled ? 'Hide screen' : 'Show TV screen';
+    fps.textContent = enabled ? fps.textContent : '';
+  };
+  async function loop() {
+    if (running) return;
+    running = true;
+    let fails = 0;
+    while (visible()) {
+      const t0 = performance.now();
+      try {
+        const headers = {};
+        try { const pin = localStorage.getItem('remotePin'); if (pin) headers['x-remote-pin'] = pin; } catch {}
+        const r = await fetch('/api/screen', { cache: 'no-store', headers });
+        if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.statusText);
+        const url = URL.createObjectURL(await r.blob());
+        await new Promise((res) => { img.onload = res; img.onerror = res; img.src = url; });
+        if (lastUrl) URL.revokeObjectURL(lastUrl);
+        lastUrl = url; fails = 0;
+        img.classList.add('on'); msg.style.display = 'none'; box.classList.remove('paused');
+        frames.push(performance.now()); frames = frames.filter((t) => performance.now() - t < 5000);
+        fps.textContent = `${(frames.length / 5).toFixed(1)} fps · no audio`;
+      } catch (e) {
+        fails++;
+        img.classList.remove('on'); box.classList.add('paused');
+        msg.style.display = ''; msg.textContent = status.state === 'connected' ? 'Screen not available: ' + e.message : 'TV is off or not connected';
+        fps.textContent = '';
+      }
+      // ~1 fps max; back off when failing
+      const wait = fails ? Math.min(10000, 2000 * fails) : Math.max(0, 700 - (performance.now() - t0));
+      await new Promise((r) => setTimeout(r, wait));
+    }
+    box.classList.add('paused');
+    running = false;
+  }
+  async function playback() {
+    if (!visible() || status.state !== 'connected') { badge.style.display = 'none'; return; }
+    try {
+      const r = await api('/api/playback', null, 'GET');
+      const label = { playing: '▶ Playing', paused: '❚❚ Paused', buffering: '… Buffering' }[r.playState];
+      badge.textContent = label || '';
+      badge.style.display = label ? '' : 'none';
+    } catch { badge.style.display = 'none'; }
+  }
+  box.addEventListener('click', () => {
+    const full = !box.classList.contains('full');
+    box.classList.toggle('full', full);
+    if (full && box.requestFullscreen) box.requestFullscreen().catch(() => {});
+    else if (!full && document.fullscreenElement) document.exitFullscreen().catch(() => {});
+  });
+  document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement) box.classList.remove('full'); });
+  toggle.addEventListener('click', () => {
+    enabled = !enabled;
+    try { localStorage.setItem('screenPreview', enabled ? 'on' : 'off'); } catch {}
+    applyToggle(); if (enabled) loop();
+  });
+  // Restart when the tab / page becomes visible again
+  document.addEventListener('visibilitychange', () => { if (visible()) loop(); });
+  document.addEventListener('click', (e) => { if (e.target.closest('.tabs button')) setTimeout(() => { if (visible()) loop(); }, 0); });
+  setInterval(playback, 3000);
+  applyToggle();
+  loop();
+})();
 
 // Tabs
 function showTab(name) {

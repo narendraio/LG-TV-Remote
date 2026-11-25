@@ -15,6 +15,7 @@ Control an LG webOS TV from any browser on the same Wi‑Fi. A tiny Node.js serv
 - Power off, screen off, and **Wake-on-LAN** power on
 - Automatic TV discovery (SSDP + network scan)
 - Keyboard shortcuts on desktop
+- **Live view of the TV screen** on your phone (~1 fps, no audio) with playing/paused status
 - No cloud, no account — everything stays on your local network
 
 ## Requirements
