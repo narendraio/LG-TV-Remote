@@ -60,7 +60,8 @@ app.use('/api', (req, res, next) => {
   if (f?.until && f.until > Date.now()) {
     return res.status(429).json({ ok: false, error: 'Too many wrong PIN attempts. Try again in a minute.' });
   }
-  const given = String(req.get('x-remote-pin') || '');
+  // Header for fetch(); ?pin= for things that can't send headers (e.g. <img> streams)
+  const given = String(req.get('x-remote-pin') || req.query.pin || '');
   if (given && safeEqual(given, PIN)) { pinFailures.delete(ip); return next(); }
   if (given) {
     const count = (f?.count || 0) + 1;
