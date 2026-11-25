@@ -23,6 +23,18 @@ const MANIFEST = {
   signatures: [{ signatureVersion: 1, signature: 'eyJhbGdvcml0aG0iOiJSU0EtU0hBMjU2Iiwia2V5SWQiOiJ0ZXN0LXNpZ25pbmctY2VydCIsInNpZ25hdHVyZVZlcnNpb24iOjF9.hrVRgjCwXVvE2OOSpDZ58hR+59aFNwYDyjQgKk3auukd7pcegmE2CzPCa0bJ0ZsRAcKkCTJrWo5iDzNhMBWRyaMOv5zWSrthlf7G128qvIlpMT0YNY+n/FaOHE73uLrS/g7swl3/qH/BGFG2Hu4RlL48eb3lLKqTt2xKHdCs6Cd4RMfJPYnzgvI4BNrFUKsjkcu+WD4OO2A27Pq1n50cMchmcaXadJhGrOqH5YmHdOCj5NSHzJYrsW0HPlpuAx/ECMeIZYDh6RMqaFM2DXzdKX9NmmyqzJ3o/0lkk/N97gfVRLW5hA29yeAwaCViZNCP8iC9aO0q9fQojoa7NQnAtw==' }],
 };
 
+// Newer LG firmware (2025+) rejects the well-known signature above with
+// "403 Pairing rejected: blacklisted certificate detected". In that case we
+// register again without the signed block. The permissions that used to come
+// from the signed block (pointer/button socket, app list, ...) must then be
+// requested in the top-level list instead.
+const UNSIGNED_MANIFEST = {
+  manifestVersion: MANIFEST.manifestVersion,
+  appVersion: '1.0',
+  permissions: [...new Set([...MANIFEST.signed.permissions, ...MANIFEST.permissions])],
+};
+const BLACKLISTED = /blacklisted certificate/i;
+
 export class LGTV extends EventEmitter {
   constructor({ ip, clientKey = null }) {
     super();
@@ -35,6 +47,7 @@ export class LGTV extends EventEmitter {
     this.pending = new Map();
     this.subs = new Map();
     this.lastError = null;
+    this.unsigned = false; // switched on after the TV rejects the signed manifest
   }
 
   async connect() {
@@ -50,7 +63,12 @@ export class LGTV extends EventEmitter {
         await this._open(url);
         this.url = url;
         return;
-      } catch (e) { lastErr = e; }
+      } catch (e) {
+        // Keep the most useful error: an answer from the TV itself (e.g. pairing
+        // rejected) beats a plain socket error from the fallback port.
+        if (!lastErr || !lastErr.fromTV) lastErr = e;
+        if (e.fromTV) break;
+      }
     }
     this.state = 'disconnected';
     this.lastError = lastErr?.message || 'connect failed';
@@ -88,8 +106,16 @@ export class LGTV extends EventEmitter {
             this.state = 'pairing';
             this.emit('state', this.state);
           } else if (msg.type === 'error') {
+            if (!this.unsigned && BLACKLISTED.test(msg.error || '')) {
+              // TV refuses the legacy signature: retry on the same socket without it.
+              this.unsigned = true;
+              sendRegister();
+              return;
+            }
             this.lastError = msg.error;
-            fail(new Error(msg.error || 'pairing rejected'));
+            const err = new Error(msg.error || 'pairing rejected');
+            err.fromTV = true;
+            fail(err);
           }
           return;
         }
@@ -101,9 +127,10 @@ export class LGTV extends EventEmitter {
         const s = this.subs.get(msg.id);
         if (s) s(msg.payload);
       });
+      const sendRegister = () => ws.send(JSON.stringify({ type: 'register', id: 'register_0', payload: { forcePairing: false, pairingType: 'PROMPT', manifest: this.unsigned ? UNSIGNED_MANIFEST : MANIFEST, 'client-key': this.clientKey || undefined } }));
       ws.on('open', () => {
         this.ws = ws;
-        ws.send(JSON.stringify({ type: 'register', id: 'register_0', payload: { forcePairing: false, pairingType: 'PROMPT', manifest: MANIFEST, 'client-key': this.clientKey || undefined } }));
+        sendRegister();
         // Pairing prompt on TV waits for user; allow up to 60s.
         setTimeout(() => fail(new Error('pairing timed out')), 60000);
       });
