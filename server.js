@@ -176,6 +176,40 @@ app.post('/api/power/on', wrap(async () => {
   return { ok: true, mac };
 }));
 
+// ---------- Sleep timer ----------
+const sleep = { at: null, timer: null, warnTimer: null };
+function clearSleep() {
+  clearTimeout(sleep.timer); clearTimeout(sleep.warnTimer);
+  sleep.at = null; sleep.timer = null; sleep.warnTimer = null;
+}
+const sleepState = () => ({ at: sleep.at, remainingMs: sleep.at ? Math.max(0, sleep.at - Date.now()) : 0 });
+
+app.get('/api/sleep', (req, res) => res.json(sleepState()));
+app.post('/api/sleep', wrap(async (req) => {
+  const minutes = Number(req.body?.minutes);
+  if (!Number.isFinite(minutes) || minutes < 0 || minutes > 720) throw new Error('minutes must be between 0 and 720');
+  clearSleep();
+  if (minutes === 0) {
+    ensureConnected().then((t) => t.toast('Sleep timer cancelled')).catch(() => {});
+    return { ok: true, ...sleepState() };
+  }
+  const ms = Math.round(minutes * 60_000);
+  sleep.at = Date.now() + ms;
+  sleep.timer = setTimeout(async () => {
+    clearSleep();
+    console.log('[sleep] timer fired, turning TV off');
+    try { const t = await ensureConnected(); await t.turnOff(); t.close(); }
+    catch (e) { console.log('[sleep] turn off failed:', e.message); }
+  }, ms);
+  if (ms > 90_000) {
+    sleep.warnTimer = setTimeout(() => {
+      ensureConnected().then((t) => t.toast('TV will turn off in 1 minute (sleep timer)')).catch(() => {});
+    }, ms - 60_000);
+  }
+  ensureConnected().then((t) => t.toast(`Sleep timer: TV will turn off in ${minutes} min`)).catch(() => {});
+  return { ok: true, ...sleepState() };
+}));
+
 app.listen(PORT, '0.0.0.0', () => {
   console.log('\nLG TV Remote is running.');
   for (const ip of localIPs()) console.log(`  Phone / other devices:  http://${ip}:${PORT}`);
