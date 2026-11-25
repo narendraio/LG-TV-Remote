@@ -105,7 +105,7 @@ export class LGTV extends EventEmitter {
         this.ws = ws;
         ws.send(JSON.stringify({ type: 'register', id: 'register_0', payload: { forcePairing: false, pairingType: 'PROMPT', manifest: MANIFEST, 'client-key': this.clientKey || undefined } }));
         // Pairing prompt on TV waits for user; allow up to 60s.
-        setTimeout(() => fail(new Error('pairing timed out')), 60000);
+        setTimeout(() => { if (!settled) fail(new Error('pairing timed out')); }, 60000);
       });
     });
   }
