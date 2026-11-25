@@ -207,6 +207,8 @@ export class LGTV extends EventEmitter {
   listApps() { return this.request('ssap://com.webos.applicationManager/listLaunchPoints'); }
   launch(id, params) { return this.request('ssap://system.launcher/launch', { id, ...(params ? { params } : {}) }); }
   closeApp(id) { return this.request('ssap://system.launcher/close', { id }); }
+  openUrl(url) { return this.request('ssap://system.launcher/open', { target: url }); }
+  playYouTube(videoId) { return this.request('ssap://system.launcher/launch', { id: 'youtube.leanback.v4', contentId: videoId }); }
   foregroundApp() { return this.request('ssap://com.webos.applicationManager/getForegroundAppInfo'); }
   toast(message) { return this.request('ssap://system.notifications/createToast', { message }); }
   listInputs() { return this.request('ssap://tv/getExternalInputList'); }
