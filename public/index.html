@@ -36,6 +36,10 @@
   .rocker button{flex:1;background:transparent;border:0;color:var(--fg);font-size:22px;font-weight:600}
   .rocker button:active{background:var(--btn2)}
   .rocker .lbl{text-align:center;font-size:11px;color:var(--dim);letter-spacing:.06em;padding:4px 0}
+  .vol{display:flex;align-items:center;gap:12px;background:var(--panel);border-radius:var(--r);padding:10px 14px;margin-bottom:10px}
+  .vol input[type=range]{flex:1;accent-color:var(--fg);height:28px}
+  .vol .v{min-width:34px;text-align:right;font-variant-numeric:tabular-nums;color:var(--dim);font-size:14px}
+  .vol .v.muted{color:var(--accent)}
   .dpad{position:relative;aspect-ratio:1;width:100%;max-width:280px;margin:0 auto;background:var(--btn);border-radius:50%;overflow:hidden}
   .dpad button{position:absolute;background:transparent;border:0;color:var(--fg);width:33%;height:33%;display:flex;align-items:center;justify-content:center}
   .dpad button:active{background:var(--btn2)}
@@ -104,6 +108,11 @@
       <div class="lbl">CH</div>
       <button data-api="/api/channel/down">∨</button>
     </div>
+  </div>
+  <div class="vol">
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/></svg>
+    <input type="range" id="volSlider" min="0" max="100" step="1" value="0" aria-label="Volume">
+    <span class="v" id="volValue">–</span>
   </div>
   <div class="row row3">
     <button class="k" data-btn="BACK"><svg viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/></svg></button>
@@ -217,6 +226,43 @@ document.addEventListener('pointerdown', (e) => {
   repeatTimer = setTimeout(() => { repeatInt = setInterval(fire, 180); }, 450);
 });
 ['pointerup', 'pointercancel', 'pointerleave'].forEach((ev) => document.addEventListener(ev, () => { clearTimeout(repeatTimer); clearInterval(repeatInt); }, true));
+
+// Volume slider: shows the live TV volume and sets it on drag
+(() => {
+  const slider = $('#volSlider'), label = $('#volValue');
+  let dragging = false, sendTimer, lastSent = null;
+  const show = (vol, muted) => {
+    if (typeof vol !== 'number' || vol < 0) return;
+    if (!dragging) slider.value = vol;
+    label.textContent = muted ? 'Mute' : vol;
+    label.classList.toggle('muted', !!muted);
+  };
+  window.refreshVolume = async () => {
+    if (status.state !== 'connected' || document.hidden) return;
+    try {
+      const r = await api('/api/volume', null, 'GET');
+      // Older webOS returns {volume, muted}; newer returns {volumeStatus:{volume, muteStatus}}
+      const vs = r.volumeStatus || {};
+      show(vs.volume ?? r.volume, vs.muteStatus ?? r.muted ?? r.mute);
+    } catch {}
+  };
+  const send = () => {
+    const v = Number(slider.value);
+    if (v === lastSent) return;
+    lastSent = v;
+    api('/api/volume/set', { volume: v }).catch((e) => toast(e.message));
+  };
+  slider.addEventListener('pointerdown', () => { dragging = true; });
+  slider.addEventListener('input', () => { label.textContent = slider.value; label.classList.remove('muted'); clearTimeout(sendTimer); sendTimer = setTimeout(send, 120); });
+  slider.addEventListener('change', () => { dragging = false; clearTimeout(sendTimer); send(); });
+  // Refresh after volume / mute buttons are used
+  document.addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (b && (/volume/.test(b.dataset.api || '') || b.dataset.btn === 'MUTE')) setTimeout(window.refreshVolume, 350);
+  });
+  setInterval(window.refreshVolume, 5000);
+  setTimeout(window.refreshVolume, 800);
+})();
 
 // Keyboard shortcuts on the Mac
 document.addEventListener('keydown', (e) => {
