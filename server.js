@@ -1,4 +1,5 @@
 import express from 'express';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -7,6 +8,7 @@ import { LGTV, discover, localIPs, macFromArp, macOf, wakeOnLan } from './lgtv.j
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CONFIG = path.join(__dirname, 'config.json');
 const PORT = Number(process.env.PORT || 8080);
+const PIN = (process.env.REMOTE_PIN || '').trim();
 
 let config = { ip: null, clientKey: null, mac: null, name: null };
 try { config = { ...config, ...JSON.parse(fs.readFileSync(CONFIG, 'utf8')) }; } catch {}
@@ -66,6 +68,30 @@ async function ensureConnected() {
 
 const app = express();
 app.use(express.json());
+
+// Optional PIN protection: set REMOTE_PIN to require it on every /api request.
+const pinFailures = new Map(); // ip -> { count, until }
+const safeEqual = (a, b) => {
+  const ha = crypto.createHash('sha256').update(a).digest();
+  const hb = crypto.createHash('sha256').update(b).digest();
+  return crypto.timingSafeEqual(ha, hb);
+};
+app.use('/api', (req, res, next) => {
+  if (!PIN) return next();
+  const ip = req.ip;
+  const f = pinFailures.get(ip);
+  if (f?.until && f.until > Date.now()) {
+    return res.status(429).json({ ok: false, error: 'Too many wrong PIN attempts. Try again in a minute.' });
+  }
+  // Header for fetch(); ?pin= for things that can't send headers (e.g. <img> streams)
+  const given = String(req.get('x-remote-pin') || req.query.pin || '');
+  if (given && safeEqual(given, PIN)) { pinFailures.delete(ip); return next(); }
+  if (given) {
+    const count = (f?.count || 0) + 1;
+    pinFailures.set(ip, count >= 5 ? { count: 0, until: Date.now() + 60_000 } : { count });
+  }
+  res.status(401).json({ ok: false, pinRequired: true, error: given ? 'Wrong PIN' : 'PIN required' });
+});
 app.use(express.static(path.join(__dirname, 'public')));
 
 const wrap = (fn) => async (req, res) => {
@@ -153,6 +179,7 @@ app.post('/api/power/on', wrap(async () => {
 app.listen(PORT, '0.0.0.0', () => {
   console.log('\nLG TV Remote is running.');
   for (const ip of localIPs()) console.log(`  Phone / other devices:  http://${ip}:${PORT}`);
-  console.log(`  This Mac:               http://localhost:${PORT}\n`);
+  console.log(`  This Mac:               http://localhost:${PORT}`);
+  console.log(PIN ? '  PIN protection:         enabled\n' : '  PIN protection:         off (set REMOTE_PIN to enable)\n');
   if (config.ip) ensureConnected().catch((e) => console.log('[tv] initial connect failed:', e.message));
 });

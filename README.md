@@ -38,6 +38,16 @@ Then open:
 
 Use a different port with `PORT=9000 npm start`.
 
+### Optional PIN
+
+Anyone on your Wi‑Fi can open the remote by default. To require a PIN:
+
+```bash
+REMOTE_PIN=4821 npm start
+```
+
+The browser asks for the PIN once and remembers it. After 5 wrong attempts a device is locked out for a minute.
+
 On macOS you can also double-click `start.command`.
 
 ## First-time pairing
@@ -59,7 +69,7 @@ Arrows = navigate · Enter = OK · Backspace = Back · Esc = Exit · `h` = Home 
 
 ## Security
 
-The server has no authentication and listens on all network interfaces, so anyone on your network can control the TV. Only run it on a trusted network and never expose it to the internet. See [SECURITY.md](SECURITY.md).
+By default the server has no authentication and listens on all network interfaces, so anyone on your network can control the TV. Set `REMOTE_PIN` (see above) to require a PIN. Only run it on a trusted network and never expose it to the internet. See [SECURITY.md](SECURITY.md).
 
 ## Contributing
 
