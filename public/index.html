@@ -5,12 +5,26 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="theme-color" content="#0b0c10">
+<meta name="theme-color" content="#0b0c10" id="themeColor">
+<script>
+  // Apply saved theme before first paint to avoid a flash
+  try { const t = localStorage.getItem('theme'); if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; } catch {}
+</script>
 <title>LG Remote</title>
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon.svg">
 <style>
-  :root{--bg:#0b0c10;--panel:#15171e;--btn:#1f2230;--btn2:#2a2e3f;--fg:#e9ebf2;--dim:#8a8fa3;--accent:#ff3b30;--ok:#34c759;--warn:#ffcc00;--r:16px}
+  :root{--bg:#0b0c10;--panel:#15171e;--btn:#1f2230;--btn2:#2a2e3f;--fg:#e9ebf2;--dim:#8a8fa3;--accent:#ff3b30;--accent2:#d32f2f;--ok:#34c759;--warn:#ffcc00;--r:16px;
+    --toast:#2a2e3f;--toast-fg:#e9ebf2;--warn-bg:#3a2d00;--warn-fg:#ffe08a;--err-bg:#3a0f0f;--err-fg:#ff9b9b;color-scheme:dark}
+  @media (prefers-color-scheme: light){
+    :root:not([data-theme="dark"]){--bg:#f2f3f7;--panel:#ffffff;--btn:#e3e5ed;--btn2:#cfd3df;--fg:#14161c;--dim:#5d6275;--accent2:#b71c1c;--ok:#1f9d44;--warn:#b38600;
+      --toast:#14161c;--toast-fg:#ffffff;--warn-bg:#fff4cc;--warn-fg:#5c4500;--err-bg:#fde2e2;--err-fg:#8a1414;color-scheme:light}
+  }
+  :root[data-theme="light"]{--bg:#f2f3f7;--panel:#ffffff;--btn:#e3e5ed;--btn2:#cfd3df;--fg:#14161c;--dim:#5d6275;--accent2:#b71c1c;--ok:#1f9d44;--warn:#b38600;
+    --toast:#14161c;--toast-fg:#ffffff;--warn-bg:#fff4cc;--warn-fg:#5c4500;--err-bg:#fde2e2;--err-fg:#8a1414;color-scheme:light}
+  .seg{display:flex;background:var(--panel);border-radius:12px;padding:4px;margin-bottom:10px}
+  .seg button{flex:1;background:transparent;border:0;color:var(--dim);padding:10px 0;border-radius:9px;font-size:14px;font-weight:500}
+  .seg button.active{background:var(--btn2);color:var(--fg)}
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none}
   html,body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.3 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;height:100%}
   body{padding:calc(env(safe-area-inset-top,0px) + 10px) 14px calc(env(safe-area-inset-bottom,0px) + 14px);max-width:440px;margin:0 auto}
@@ -26,7 +40,7 @@
   .page{display:none}.page.active{display:block}
   button.k{background:var(--btn);border:0;color:var(--fg);border-radius:var(--r);font-size:16px;font-weight:500;display:flex;align-items:center;justify-content:center;transition:background .08s,transform .08s;cursor:pointer}
   button.k:active,button.k.down{background:var(--btn2);transform:scale(.96)}
-  button.k.accent{background:var(--accent)}button.k.accent:active{background:#d32f2f}
+  button.k.accent{background:var(--accent);color:#fff}button.k.accent:active{background:var(--accent2)}
   button.k svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
   .row{display:grid;gap:10px;margin-bottom:10px}
   .row3{grid-template-columns:1fr 1fr 1fr}.row4{grid-template-columns:repeat(4,1fr)}
@@ -54,9 +68,9 @@
   h3{font-size:13px;color:var(--dim);text-transform:uppercase;letter-spacing:.06em;margin:14px 0 8px}
   input[type=text]{width:100%;background:var(--btn);border:0;border-radius:12px;color:var(--fg);padding:14px;font-size:16px;margin-bottom:10px;-webkit-user-select:text;user-select:text}
   .muted{color:var(--dim);font-size:13px;line-height:1.5}
-  .banner{background:#3a2d00;color:#ffe08a;border-radius:12px;padding:12px 14px;margin-bottom:12px;font-size:14px;display:none}
-  .banner.err{background:#3a0f0f;color:#ff9b9b}.banner.show{display:block}
-  .toast{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom,0px) + 24px);transform:translateX(-50%);background:#2a2e3f;color:var(--fg);padding:10px 16px;border-radius:12px;font-size:14px;opacity:0;pointer-events:none;transition:opacity .2s;max-width:90vw}
+  .banner{background:var(--warn-bg);color:var(--warn-fg);border-radius:12px;padding:12px 14px;margin-bottom:12px;font-size:14px;display:none}
+  .banner.err{background:var(--err-bg);color:var(--err-fg)}.banner.show{display:block}
+  .toast{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom,0px) + 24px);transform:translateX(-50%);background:var(--toast);color:var(--toast-fg);padding:10px 16px;border-radius:12px;font-size:14px;opacity:0;pointer-events:none;transition:opacity .2s;max-width:90vw}
   .toast.show{opacity:1}
   code{background:var(--btn);padding:2px 6px;border-radius:6px;font-size:13px;user-select:text;-webkit-user-select:text}
 </style>
@@ -160,6 +174,12 @@
 
 <!-- SETTINGS -->
 <section class="page" id="page-settings">
+  <h3>Appearance</h3>
+  <div class="seg" id="themeSeg">
+    <button data-theme-opt="auto">Auto</button>
+    <button data-theme-opt="light">Light</button>
+    <button data-theme-opt="dark">Dark</button>
+  </div>
   <h3>TV</h3>
   <div class="muted" id="tvInfo">No TV configured.</div>
   <div style="height:10px"></div>
@@ -197,6 +217,18 @@ async function act(path, body) {
   catch (e) { toast(e.message); refreshStatus(); }
 }
 function haptic() { try { navigator.vibrate && navigator.vibrate(8); } catch {} }
+
+// Theme: auto (follows the device), light or dark
+function applyTheme(pref) {
+  const root = document.documentElement;
+  if (pref === 'light' || pref === 'dark') root.dataset.theme = pref; else delete root.dataset.theme;
+  try { pref === 'auto' ? localStorage.removeItem('theme') : localStorage.setItem('theme', pref); } catch {}
+  document.querySelectorAll('[data-theme-opt]').forEach((b) => b.classList.toggle('active', b.dataset.themeOpt === pref));
+  $('#themeColor').content = getComputedStyle(root).getPropertyValue('--bg').trim();
+}
+document.addEventListener('click', (e) => { const b = e.target.closest('[data-theme-opt]'); if (b) applyTheme(b.dataset.themeOpt); });
+matchMedia('(prefers-color-scheme: light)').addEventListener('change', () => applyTheme(document.documentElement.dataset.theme || 'auto'));
+applyTheme(document.documentElement.dataset.theme || 'auto');
 
 // Buttons: data-btn = remote key via pointer socket, data-api = REST endpoint
 document.addEventListener('click', (e) => {
