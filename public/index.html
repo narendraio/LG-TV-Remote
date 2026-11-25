@@ -130,6 +130,12 @@
   <div class="apps" id="apps"><div class="muted">Loading…</div></div>
   <h3>Inputs</h3>
   <div class="list" id="inputs"><div class="muted">Loading…</div></div>
+  <h3>Now playing</h3>
+  <div class="muted" id="nowPlaying" style="margin-bottom:10px">–</div>
+  <div class="row row3">
+    <button class="k" onclick="closeApp()" style="grid-column:span 2">Close app</button>
+    <button class="k" onclick="loadNowPlaying()">Refresh</button>
+  </div>
 </section>
 
 <!-- MORE -->
@@ -233,9 +239,28 @@ document.addEventListener('keydown', (e) => {
 function showTab(name) {
   document.querySelectorAll('.tabs button').forEach((b) => b.classList.toggle('active', b.dataset.tab === name));
   document.querySelectorAll('.page').forEach((p) => p.classList.toggle('active', p.id === 'page-' + name));
-  if (name === 'apps') loadApps();
+  if (name === 'apps') { loadApps(); loadNowPlaying(); }
   if (name === 'settings') refreshStatus();
 }
+
+// Now playing / close app
+async function loadNowPlaying() {
+  const el = $('#nowPlaying');
+  try {
+    const r = await api('/api/now-playing', null, 'GET');
+    el.textContent = r.title ? r.title : 'Nothing (home screen / live TV)';
+    document.title = r.title ? `${r.title} · LG Remote` : 'LG Remote';
+  } catch (e) { el.textContent = e.message; }
+}
+async function closeApp() {
+  haptic();
+  try {
+    const r = await api('/api/app/close');
+    toast(r.wentHome ? 'TV would not close it — went Home instead' : 'App closed');
+  } catch (e) { toast(e.message); }
+  setTimeout(loadNowPlaying, 800);
+}
+document.addEventListener('click', (e) => { if (e.target.closest('[data-launch], [data-input]')) setTimeout(loadNowPlaying, 2500); });
 
 // Apps & inputs
 let appsLoaded = false;
