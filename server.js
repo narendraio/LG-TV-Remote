@@ -194,6 +194,30 @@ app.post('/api/text/enter', wrap(async () => (await ensureConnected()).sendEnter
 app.post('/api/text/delete', wrap(async (req) => (await ensureConnected()).deleteChars(Number(req.body.count || 1))));
 app.post('/api/toast', wrap(async (req) => (await ensureConnected()).toast(String(req.body.message || ''))));
 
+// What's on screen right now, with a friendly app name.
+let appTitles = new Map();
+app.get('/api/now-playing', wrap(async () => {
+  const t = await ensureConnected();
+  const fg = await t.foregroundApp();
+  const appId = fg?.appId || '';
+  if (appId && !appTitles.has(appId)) {
+    try {
+      const r = await t.listApps();
+      appTitles = new Map((r.launchPoints || []).map((a) => [a.id, a.title]));
+    } catch {}
+  }
+  return { ok: true, appId, title: appTitles.get(appId) || appId || null };
+}));
+
+// Close the app in the foreground; if the TV refuses, fall back to Home.
+app.post('/api/app/close', wrap(async (req) => {
+  const t = await ensureConnected();
+  const id = String(req.body?.id || (await t.foregroundApp())?.appId || '');
+  if (!id) throw new Error('No app is open');
+  try { await t.closeApp(id); return { ok: true, closed: id }; }
+  catch { await t.sendButton('HOME'); return { ok: true, closed: null, wentHome: true }; }
+}));
+
 app.post('/api/power/off', wrap(async () => { const t = await ensureConnected(); await t.turnOff(); t.close(); }));
 app.post('/api/power/screen', wrap(async (req) => { const t = await ensureConnected(); return req.body.on ? t.screenOn() : t.screenOff(); }));
 app.post('/api/power/on', wrap(async () => {
