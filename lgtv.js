@@ -132,7 +132,7 @@ export class LGTV extends EventEmitter {
         this.ws = ws;
         sendRegister();
         // Pairing prompt on TV waits for user; allow up to 60s.
-        setTimeout(() => fail(new Error('pairing timed out')), 60000);
+        setTimeout(() => { if (!settled) fail(new Error('pairing timed out')); }, 60000);
       });
     });
   }
