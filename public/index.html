@@ -65,6 +65,10 @@
   .banner.err{background:#3a0f0f;color:#ff9b9b}.banner.show{display:block}
   .toast{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom,0px) + 24px);transform:translateX(-50%);background:#2a2e3f;color:var(--fg);padding:10px 16px;border-radius:12px;font-size:14px;opacity:0;pointer-events:none;transition:opacity .2s;max-width:90vw}
   .toast.show{opacity:1}
+  .swipe{position:relative;background:var(--panel);border-radius:var(--r);height:min(58vh,420px);margin-bottom:10px;touch-action:none;display:flex;align-items:center;justify-content:center;overflow:hidden}
+  .swipe-hint{color:var(--dim);text-align:center;font-size:14px;line-height:1.6;pointer-events:none}
+  .swipe-arrow{position:absolute;font-size:64px;color:var(--fg);opacity:0;transition:opacity .25s;pointer-events:none}
+  .swipe-arrow.show{opacity:.5;transition:none}
   code{background:var(--btn);padding:2px 6px;border-radius:6px;font-size:13px;user-select:text;-webkit-user-select:text}
 </style>
 </head>
@@ -76,6 +80,7 @@
 <div class="banner" id="banner"></div>
 <div class="tabs">
   <button class="active" data-tab="remote" onclick="showTab('remote')">Remote</button>
+  <button data-tab="swipe" onclick="showTab('swipe')">Swipe</button>
   <button data-tab="apps" onclick="showTab('apps')">Apps</button>
   <button data-tab="more" onclick="showTab('more')">More</button>
   <button data-tab="settings" onclick="showTab('settings')">Setup</button>
@@ -133,6 +138,19 @@
     <button class="k" data-btn="GREEN" style="color:#5dff8a">●</button>
     <button class="k" data-btn="YELLOW" style="color:#ffe45d">●</button>
     <button class="k" data-btn="BLUE" style="color:#6aa8ff">●</button>
+  </div>
+</section>
+
+<!-- SWIPE -->
+<section class="page" id="page-swipe">
+  <div class="swipe" id="swipe">
+    <div class="swipe-hint">Swipe to move · tap for OK<br>swipe &amp; hold to keep moving · long-press for Back</div>
+    <div class="swipe-arrow" id="swipeArrow"></div>
+  </div>
+  <div class="row row3">
+    <button class="k" data-btn="BACK">Back</button>
+    <button class="k" data-btn="HOME">Home</button>
+    <button class="k" data-btn="EXIT">Exit</button>
   </div>
 </section>
 
@@ -406,6 +424,40 @@ document.addEventListener('click', (e) => {
   });
   const up = (e) => { const single = pts.size === 1; pts.delete(e.pointerId); if (single && moved < 8 && Date.now() - start < 350) { haptic(); act('/api/pointer/click'); } };
   pad.addEventListener('pointerup', up); pad.addEventListener('pointercancel', up);
+})();
+
+// Swipe pad: swipe = arrow key, tap = OK, long-press = Back, swipe & hold = repeat
+(() => {
+  const el = $('#swipe'), arrow = $('#swipeArrow');
+  const glyph = { UP: '↑', DOWN: '↓', LEFT: '←', RIGHT: '→', ENTER: 'OK', BACK: '↩' };
+  let sx = 0, sy = 0, t0 = 0, active = false, fired = false, holdTimer, repeatInt, arrowTimer;
+  const flash = (k) => { arrow.textContent = glyph[k] || ''; arrow.classList.add('show'); clearTimeout(arrowTimer); arrowTimer = setTimeout(() => arrow.classList.remove('show'), 120); };
+  const send = (k) => { haptic(); flash(k); act('/api/button/' + k); };
+  const stop = () => { clearTimeout(holdTimer); clearInterval(repeatInt); repeatInt = null; };
+  el.addEventListener('pointerdown', (e) => {
+    el.setPointerCapture(e.pointerId);
+    active = true; fired = false; sx = e.clientX; sy = e.clientY; t0 = Date.now();
+    holdTimer = setTimeout(() => { if (!fired) { fired = true; send('BACK'); } }, 600);
+  });
+  el.addEventListener('pointermove', (e) => {
+    if (!active) return;
+    const dx = e.clientX - sx, dy = e.clientY - sy;
+    if (Math.hypot(dx, dy) < 30) return;
+    clearTimeout(holdTimer);
+    const k = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'RIGHT' : 'LEFT') : (dy > 0 ? 'DOWN' : 'UP');
+    send(k); fired = true;
+    // Re-anchor so a long continuous swipe sends several steps
+    sx = e.clientX; sy = e.clientY;
+    stop();
+    holdTimer = setTimeout(() => { repeatInt = setInterval(() => send(k), 200); }, 500);
+  });
+  const end = () => {
+    if (!active) return;
+    active = false; stop();
+    if (!fired && Date.now() - t0 < 600) send('ENTER');
+  };
+  el.addEventListener('pointerup', end);
+  el.addEventListener('pointercancel', () => { active = false; stop(); });
 })();
 
 // Text
