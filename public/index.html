@@ -53,6 +53,9 @@
   .apps button img{width:44px;height:44px;border-radius:10px;object-fit:cover;background:#000}
   .apps button span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
   .apps button:active{background:var(--btn2)}
+  .apps button{position:relative}
+  .apps button.fav::after{content:"★";position:absolute;top:4px;right:6px;font-size:11px;color:var(--warn)}
+  .apps .empty{grid-column:1/-1}
   .list button{display:block;width:100%;text-align:left;background:var(--btn);border:0;color:var(--fg);padding:14px;border-radius:12px;margin-bottom:8px;font-size:15px}
   .list button:active{background:var(--btn2)}.list small{color:var(--dim);display:block;margin-top:2px}
   h3{font-size:13px;color:var(--dim);text-transform:uppercase;letter-spacing:.06em;margin:14px 0 8px}
@@ -135,7 +138,12 @@
 
 <!-- APPS -->
 <section class="page" id="page-apps">
-  <h3>Apps</h3>
+  <input type="text" id="appSearch" placeholder="Search apps…" autocomplete="off" style="margin-top:4px">
+  <div id="favWrap" style="display:none">
+    <h3>Favorites</h3>
+    <div class="apps" id="favApps"></div>
+  </div>
+  <h3>Apps <span style="text-transform:none;letter-spacing:0;font-size:12px">· long-press to favorite</span></h3>
   <div class="apps" id="apps"><div class="muted">Loading…</div></div>
   <h3>Inputs</h3>
   <div class="list" id="inputs"><div class="muted">Loading…</div></div>
@@ -317,21 +325,65 @@ function showTab(name) {
 }
 
 // Apps & inputs
-let appsLoaded = false;
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+let appsLoaded = false, allApps = [];
+const favStore = {
+  get() { try { return JSON.parse(localStorage.getItem('favApps') || '[]'); } catch { return []; } },
+  set(list) { try { localStorage.setItem('favApps', JSON.stringify(list)); } catch {} },
+};
+let favs = favStore.get();
+function toggleFav(id) {
+  favs = favs.includes(id) ? favs.filter((f) => f !== id) : [...favs, id];
+  favStore.set(favs);
+  const app = allApps.find((a) => a.id === id);
+  toast((favs.includes(id) ? 'Added to favorites: ' : 'Removed from favorites: ') + (app?.title || id));
+  renderApps();
+}
+const appBtn = (a) => `<button data-launch="${esc(a.id)}" class="${favs.includes(a.id) ? 'fav' : ''}"><img src="${esc(a.icon)}" alt="" onerror="this.style.visibility='hidden'"><span>${esc(a.title)}</span></button>`;
+function renderApps() {
+  const q = $('#appSearch').value.trim().toLowerCase();
+  const match = (a) => !q || a.title.toLowerCase().includes(q) || a.id.toLowerCase().includes(q);
+  const favApps = favs.map((id) => allApps.find((a) => a.id === id)).filter(Boolean).filter(match);
+  $('#favWrap').style.display = favApps.length ? '' : 'none';
+  $('#favApps').innerHTML = favApps.map(appBtn).join('');
+  const list = allApps.filter(match);
+  $('#apps').innerHTML = list.map(appBtn).join('') || `<div class="muted empty">${q ? 'No apps match “' + esc(q) + '”' : 'No apps'}</div>`;
+}
+$('#appSearch').addEventListener('input', renderApps);
+$('#appSearch').addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter') return;
+  const first = document.querySelector('#page-apps [data-launch]');
+  if (first) first.click();
+});
+// Long-press an app to add/remove it from favorites
+let pressTimer, longPressed = false;
+document.addEventListener('pointerdown', (e) => {
+  const b = e.target.closest('[data-launch]'); if (!b) return;
+  longPressed = false;
+  pressTimer = setTimeout(() => { longPressed = true; haptic(); toggleFav(b.dataset.launch); }, 550);
+});
+['pointerup', 'pointercancel', 'pointerleave', 'pointermove'].forEach((ev) => document.addEventListener(ev, (e) => {
+  if (ev === 'pointermove' && Math.abs(e.movementX) + Math.abs(e.movementY) < 4) return;
+  clearTimeout(pressTimer);
+}, true));
+document.addEventListener('contextmenu', (e) => { if (e.target.closest('[data-launch]')) e.preventDefault(); });
 async function loadApps() {
   if (appsLoaded) return;
   try {
     const { apps } = await api('/api/apps', null, 'GET');
-    $('#apps').innerHTML = apps.map((a) => `<button data-launch="${a.id}"><img src="${a.icon || ''}" onerror="this.style.visibility='hidden'"><span>${a.title}</span></button>`).join('') || '<div class="muted">No apps</div>';
+    allApps = apps;
+    renderApps();
     appsLoaded = true;
-  } catch (e) { $('#apps').innerHTML = `<div class="muted">${e.message}</div>`; }
+  } catch (e) { $('#apps').innerHTML = `<div class="muted">${esc(e.message)}</div>`; }
   try {
     const { inputs } = await api('/api/inputs', null, 'GET');
     $('#inputs').innerHTML = inputs.map((i) => `<button data-input="${i.id}">${i.label}<small>${i.connected ? 'connected' : 'not connected'}</small></button>`).join('') || '<div class="muted">No inputs</div>';
   } catch (e) { $('#inputs').innerHTML = `<div class="muted">${e.message}</div>`; }
 }
 document.addEventListener('click', (e) => {
-  const a = e.target.closest('[data-launch]'); if (a) { haptic(); act('/api/launch', { id: a.dataset.launch }); toast('Launching ' + a.querySelector('span').textContent); }
+  const a = e.target.closest('[data-launch]');
+  if (a && longPressed) { longPressed = false; return; }
+  if (a) { haptic(); act('/api/launch', { id: a.dataset.launch }); toast('Launching ' + a.querySelector('span').textContent); }
   const i = e.target.closest('[data-input]'); if (i) { haptic(); act('/api/input', { id: i.dataset.input }); }
 });
 
