@@ -61,8 +61,9 @@
   .dpad .c{left:33.5%;top:33.5%;background:var(--btn2);border-radius:50%;font-weight:600;font-size:15px}
   .dpad svg{width:26px;height:26px;fill:none;stroke:currentColor;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}
   .screen{position:relative;background:#000;border-radius:var(--r);overflow:hidden;aspect-ratio:16/9;margin-bottom:10px;cursor:zoom-in}
-  .screen img{width:100%;height:100%;object-fit:contain;display:block;opacity:0;transition:opacity .2s}
+  .screen img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;display:block;opacity:0;transition:opacity .3s ease}
   .screen img.on{opacity:1}
+  .screen > :not(img){z-index:3}
   .screen .msg{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#8a8fa3;font-size:13px;text-align:center;padding:12px}
   .screen .badge{position:absolute;left:8px;top:8px;background:rgba(0,0,0,.6);color:#fff;font-size:12px;padding:3px 8px;border-radius:8px;display:none}
   .screen .live{position:absolute;right:8px;top:8px;background:rgba(0,0,0,.6);color:#fff;font-size:11px;padding:3px 8px;border-radius:8px;letter-spacing:.06em}
@@ -115,6 +116,7 @@
 <section class="page active" id="page-remote">
   <div class="screen" id="screen" title="Tap for full screen">
     <img id="screenImg" alt="TV screen">
+    <img id="screenImg2" alt="" aria-hidden="true">
     <div class="msg" id="screenMsg">Connecting to TV screen…</div>
     <div class="badge" id="screenBadge"></div>
     <div class="live" id="screenLive">LIVE</div>
@@ -409,11 +411,74 @@ document.addEventListener('keydown', (e) => {
     if (!enabled) fps.textContent = '';
   };
   const showMsg = (text) => { msg.textContent = text; msg.style.display = ''; box.classList.add('paused'); };
+  // Frames are read from the MJPEG stream with fetch, fully decoded off-screen
+  // and then cross-faded over the previous one. Letting <img> render the stream
+  // directly makes every frame paint top-to-bottom while it downloads, which
+  // looks like constant loading rather than video.
+  const layers = [img, $('#screenImg2')];
+  let front = 0, ctrl = null, decoding = false, pending = null;
+  const indexOf = (buf, pat, from = 0) => {
+    outer: for (let i = from; i <= buf.length - pat.length; i++) {
+      for (let j = 0; j < pat.length; j++) if (buf[i + j] !== pat[j]) continue outer;
+      return i;
+    }
+    return -1;
+  };
+  const CRLF2 = [13, 10, 13, 10], latin1 = new TextDecoder('latin1');
+  async function readStream(signal) {
+    const headers = {};
+    try { const pin = localStorage.getItem('remotePin'); if (pin) headers['x-remote-pin'] = pin; } catch {}
+    const r = await fetch('/api/screen/stream?t=' + Date.now(), { signal, headers, cache: 'no-store' });
+    if (!r.ok || !r.body) throw new Error('stream ' + r.status);
+    const reader = r.body.getReader();
+    let buf = new Uint8Array(0);
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) throw new Error('stream ended');
+      const next = new Uint8Array(buf.length + value.length); next.set(buf); next.set(value, buf.length); buf = next;
+      for (;;) {
+        const headEnd = indexOf(buf, CRLF2);
+        if (headEnd < 0) break;
+        const len = Number(latin1.decode(buf.subarray(0, headEnd)).match(/Content-Length:\s*(\d+)/i)?.[1]);
+        const bodyStart = headEnd + 4;
+        if (!len) { buf = buf.subarray(bodyStart); continue; }
+        if (buf.length < bodyStart + len) break; // wait for the rest of this frame
+        showFrame(buf.slice(bodyStart, bodyStart + len));
+        buf = buf.subarray(bodyStart + len);
+      }
+    }
+  }
+  async function showFrame(bytes) {
+    if (decoding) { pending = bytes; return; } // still fading the last one: keep only the newest
+    decoding = true;
+    const back = layers[1 - front], cur = layers[front];
+    const url = URL.createObjectURL(new Blob([bytes], { type: 'image/jpeg' }));
+    try {
+      back.src = url;
+      await back.decode();
+      // New frame fades in on top; the old one stays fully visible underneath
+      // until the fade is done, so there's never a dark dip between frames.
+      back.style.zIndex = 2; cur.style.zIndex = 1;
+      back.classList.add('on');
+      const oldUrl = cur.dataset.url;
+      back.dataset.url = url;
+      front = 1 - front;
+      setTimeout(() => { cur.classList.remove('on'); if (oldUrl) URL.revokeObjectURL(oldUrl); }, 320);
+      gotFrame = true; clearTimeout(watchdog);
+      msg.style.display = 'none'; box.classList.remove('paused');
+      await new Promise((r) => setTimeout(r, 120));
+    } catch { URL.revokeObjectURL(url); }
+    decoding = false;
+    if (pending) { const p = pending; pending = null; showFrame(p); }
+  }
   function start() {
     if (streaming || !visible()) return;
     streaming = true; gotFrame = false;
-    let pin = ''; try { pin = localStorage.getItem('remotePin') || ''; } catch {}
-    img.src = '/api/screen/stream?t=' + Date.now() + (pin ? '&pin=' + encodeURIComponent(pin) : '');
+    ctrl = new AbortController();
+    readStream(ctrl.signal).catch(() => {
+      if (!streaming) return;
+      stop(); showMsg('Reconnecting to the TV screen…'); setTimeout(start, 2000);
+    });
     clearTimeout(watchdog);
     // No picture after a while (TV off / not connected): drop the stream and retry later
     watchdog = setTimeout(() => {
@@ -425,17 +490,9 @@ document.addEventListener('keydown', (e) => {
   function stop() {
     if (!streaming) return;
     streaming = false; clearTimeout(watchdog);
-    img.removeAttribute('src'); // closes the stream so the TV stops capturing
+    ctrl?.abort(); ctrl = null; pending = null; // closes the stream so the TV stops capturing
     box.classList.add('paused');
   }
-  img.addEventListener('load', () => {
-    gotFrame = true; clearTimeout(watchdog);
-    img.classList.add('on'); msg.style.display = 'none'; box.classList.remove('paused');
-  });
-  img.addEventListener('error', () => {
-    if (!streaming) return;
-    stop(); showMsg('Reconnecting to the TV screen…'); setTimeout(start, 2000);
-  });
   const sync = () => (visible() ? start() : stop());
   async function playback() {
     if (!visible() || status.state !== 'connected') { badge.style.display = 'none'; return; }
