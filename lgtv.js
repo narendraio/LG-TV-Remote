@@ -190,6 +190,24 @@ export class LGTV extends EventEmitter {
     p.send(`type:move\ndx:${Math.round(dx)}\ndy:${Math.round(dy)}\ndown:${down ? 1 : 0}\n\n`);
   }
   async pointerClick() { const p = await this.getPointer(); p.send('type:click\n\n'); }
+  // The pointer socket only knows relative moves. To reach an absolute spot we
+  // first push the cursor into the top-left corner (it clamps there), then move
+  // to the target. x/y are 0..1 of the screen; w/h are the pointer's units for
+  // the full screen width/height (calibrated per TV, default 1920x1080).
+  async pointerMoveTo(x, y, w = 1920, h = 1080) {
+    const p = await this.getPointer();
+    const step = 120; // big single jumps can be clamped/ignored by the TV
+    const move = (dx, dy) => p.send(`type:move\ndx:${Math.round(dx)}\ndy:${Math.round(dy)}\ndown:0\n\n`);
+    const pause = (ms) => new Promise((r) => setTimeout(r, ms));
+    for (let i = 0; i < Math.ceil((w + 200) / step); i++) { move(-step, -step * (h / w)); await pause(4); }
+    let tx = Math.max(0, Math.min(1, x)) * w, ty = Math.max(0, Math.min(1, y)) * h;
+    while (tx > 0.5 || ty > 0.5) {
+      const dx = Math.min(step, tx), dy = Math.min(step, ty);
+      move(dx, dy); tx -= dx; ty -= dy;
+      await pause(4);
+    }
+  }
+  async pointerTapAt(x, y, w, h) { await this.pointerMoveTo(x, y, w, h); await new Promise((r) => setTimeout(r, 60)); await this.pointerClick(); }
   async pointerScroll(dx, dy) { const p = await this.getPointer(); p.send(`type:scroll\ndx:${Math.round(dx)}\ndy:${Math.round(dy)}\n\n`); }
 
   // Convenience wrappers

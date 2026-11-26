@@ -61,14 +61,26 @@
   .dpad .c{left:33.5%;top:33.5%;background:var(--btn2);border-radius:50%;font-weight:600;font-size:15px}
   .dpad svg{width:26px;height:26px;fill:none;stroke:currentColor;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}
   .screen{position:relative;background:#000;border-radius:var(--r);overflow:hidden;aspect-ratio:16/9;margin-bottom:10px;cursor:zoom-in}
-  .screen img{width:100%;height:100%;object-fit:contain;display:block;opacity:0;transition:opacity .2s}
+  .screen img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;display:block;opacity:0;transition:opacity .3s ease}
   .screen img.on{opacity:1}
+  .screen > :not(img){z-index:3}
   .screen .msg{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#8a8fa3;font-size:13px;text-align:center;padding:12px}
   .screen .badge{position:absolute;left:8px;top:8px;background:rgba(0,0,0,.6);color:#fff;font-size:12px;padding:3px 8px;border-radius:8px;display:none}
   .screen .live{position:absolute;right:8px;top:8px;background:rgba(0,0,0,.6);color:#fff;font-size:11px;padding:3px 8px;border-radius:8px;letter-spacing:.06em}
   .screen .live::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:#ff3b30;margin-right:5px;vertical-align:1px}
   .screen.paused .live::before{background:#8a8fa3}
-  .screen.full{position:fixed;inset:0;z-index:50;border-radius:0;aspect-ratio:auto;margin:0;cursor:zoom-out}
+  .screen.full{position:fixed;inset:0;z-index:50;border-radius:0;aspect-ratio:auto;margin:0;cursor:crosshair;touch-action:none}
+  .screen .ctl{display:none;position:absolute;left:0;right:0;bottom:0;padding:10px 10px calc(env(safe-area-inset-bottom,0px) + 10px);gap:8px;justify-content:center;background:linear-gradient(transparent,rgba(0,0,0,.75))}
+  .screen.full .ctl{display:flex}
+  .screen .ctl button{background:rgba(255,255,255,.14);border:0;color:#fff;border-radius:12px;min-width:48px;height:44px;font-size:15px;padding:0 12px;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+  .screen .ctl button:active{background:rgba(255,255,255,.3)}
+  .screen .hint{display:none;position:absolute;left:50%;top:10px;transform:translateX(-50%);background:rgba(0,0,0,.6);color:#fff;font-size:12px;padding:4px 10px;border-radius:8px;white-space:nowrap;transition:opacity .6s}
+  .screen.full .hint{display:block}
+  .screen .ripple{position:absolute;width:36px;height:36px;margin:-18px 0 0 -18px;border-radius:50%;border:2px solid #fff;pointer-events:none;animation:ripple .5s ease-out forwards}
+  .screen .gesture{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:72px;color:#fff;opacity:0;pointer-events:none;text-shadow:0 2px 12px rgba(0,0,0,.6)}
+  .screen .gesture.show{animation:gfade .5s ease-out}
+  @keyframes ripple{from{transform:scale(.4);opacity:1}to{transform:scale(1.6);opacity:0}}
+  @keyframes gfade{from{opacity:.85}to{opacity:0}}
   .screenbar{display:flex;justify-content:space-between;align-items:center;margin:-4px 2px 10px;color:var(--dim);font-size:12px}
   .screenbar button{background:none;border:0;color:var(--dim);font-size:12px;padding:4px 0;cursor:pointer}
   .pad{background:var(--panel);border-radius:var(--r);height:220px;display:flex;align-items:center;justify-content:center;color:var(--dim);touch-action:none;margin-bottom:10px;text-align:center;padding:12px}
@@ -113,11 +125,23 @@
 
 <!-- REMOTE -->
 <section class="page active" id="page-remote">
-  <div class="screen" id="screen" title="Tap for full screen">
-    <img id="screenImg" alt="TV screen">
+  <div class="screen" id="screen" title="Tap to control the TV from here">
+    <img id="screenImg" alt="TV screen" draggable="false">
+    <img id="screenImg2" alt="" aria-hidden="true" draggable="false">
     <div class="msg" id="screenMsg">Connecting to TV screen…</div>
     <div class="badge" id="screenBadge"></div>
     <div class="live" id="screenLive">LIVE</div>
+    <div class="hint" id="screenHint">Tap = click there · swipe = arrows · hold = Back</div>
+    <div class="gesture" id="screenGesture"></div>
+    <div class="ctl" id="screenCtl">
+      <button data-ctl="exit" title="Close">✕</button>
+      <button data-ctl="BACK" title="Back">↩</button>
+      <button data-ctl="HOME" title="Home">⌂</button>
+      <button data-ctl="ENTER" title="OK">OK</button>
+      <button data-ctl="playpause" title="Play / pause">⏯</button>
+      <button data-ctl="voldown" title="Volume down">−</button>
+      <button data-ctl="volup" title="Volume up">+</button>
+    </div>
   </div>
   <div class="screenbar"><span id="screenFps"></span><button id="screenToggle">Hide screen</button></div>
   <div class="row row3">
@@ -409,11 +433,74 @@ document.addEventListener('keydown', (e) => {
     if (!enabled) fps.textContent = '';
   };
   const showMsg = (text) => { msg.textContent = text; msg.style.display = ''; box.classList.add('paused'); };
+  // Frames are read from the MJPEG stream with fetch, fully decoded off-screen
+  // and then cross-faded over the previous one. Letting <img> render the stream
+  // directly makes every frame paint top-to-bottom while it downloads, which
+  // looks like constant loading rather than video.
+  const layers = [img, $('#screenImg2')];
+  let front = 0, ctrl = null, decoding = false, pending = null;
+  const indexOf = (buf, pat, from = 0) => {
+    outer: for (let i = from; i <= buf.length - pat.length; i++) {
+      for (let j = 0; j < pat.length; j++) if (buf[i + j] !== pat[j]) continue outer;
+      return i;
+    }
+    return -1;
+  };
+  const CRLF2 = [13, 10, 13, 10], latin1 = new TextDecoder('latin1');
+  async function readStream(signal) {
+    const headers = {};
+    try { const pin = localStorage.getItem('remotePin'); if (pin) headers['x-remote-pin'] = pin; } catch {}
+    const r = await fetch('/api/screen/stream?t=' + Date.now(), { signal, headers, cache: 'no-store' });
+    if (!r.ok || !r.body) throw new Error('stream ' + r.status);
+    const reader = r.body.getReader();
+    let buf = new Uint8Array(0);
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) throw new Error('stream ended');
+      const next = new Uint8Array(buf.length + value.length); next.set(buf); next.set(value, buf.length); buf = next;
+      for (;;) {
+        const headEnd = indexOf(buf, CRLF2);
+        if (headEnd < 0) break;
+        const len = Number(latin1.decode(buf.subarray(0, headEnd)).match(/Content-Length:\s*(\d+)/i)?.[1]);
+        const bodyStart = headEnd + 4;
+        if (!len) { buf = buf.subarray(bodyStart); continue; }
+        if (buf.length < bodyStart + len) break; // wait for the rest of this frame
+        showFrame(buf.slice(bodyStart, bodyStart + len));
+        buf = buf.subarray(bodyStart + len);
+      }
+    }
+  }
+  async function showFrame(bytes) {
+    if (decoding) { pending = bytes; return; } // still fading the last one: keep only the newest
+    decoding = true;
+    const back = layers[1 - front], cur = layers[front];
+    const url = URL.createObjectURL(new Blob([bytes], { type: 'image/jpeg' }));
+    try {
+      back.src = url;
+      await back.decode();
+      // New frame fades in on top; the old one stays fully visible underneath
+      // until the fade is done, so there's never a dark dip between frames.
+      back.style.zIndex = 2; cur.style.zIndex = 1;
+      back.classList.add('on');
+      const oldUrl = cur.dataset.url;
+      back.dataset.url = url;
+      front = 1 - front;
+      setTimeout(() => { cur.classList.remove('on'); if (oldUrl) URL.revokeObjectURL(oldUrl); }, 320);
+      gotFrame = true; clearTimeout(watchdog);
+      msg.style.display = 'none'; box.classList.remove('paused');
+      await new Promise((r) => setTimeout(r, 120));
+    } catch { URL.revokeObjectURL(url); }
+    decoding = false;
+    if (pending) { const p = pending; pending = null; showFrame(p); }
+  }
   function start() {
     if (streaming || !visible()) return;
     streaming = true; gotFrame = false;
-    let pin = ''; try { pin = localStorage.getItem('remotePin') || ''; } catch {}
-    img.src = '/api/screen/stream?t=' + Date.now() + (pin ? '&pin=' + encodeURIComponent(pin) : '');
+    ctrl = new AbortController();
+    readStream(ctrl.signal).catch(() => {
+      if (!streaming) return;
+      stop(); showMsg('Reconnecting to the TV screen…'); setTimeout(start, 2000);
+    });
     clearTimeout(watchdog);
     // No picture after a while (TV off / not connected): drop the stream and retry later
     watchdog = setTimeout(() => {
@@ -425,17 +512,9 @@ document.addEventListener('keydown', (e) => {
   function stop() {
     if (!streaming) return;
     streaming = false; clearTimeout(watchdog);
-    img.removeAttribute('src'); // closes the stream so the TV stops capturing
+    ctrl?.abort(); ctrl = null; pending = null; // closes the stream so the TV stops capturing
     box.classList.add('paused');
   }
-  img.addEventListener('load', () => {
-    gotFrame = true; clearTimeout(watchdog);
-    img.classList.add('on'); msg.style.display = 'none'; box.classList.remove('paused');
-  });
-  img.addEventListener('error', () => {
-    if (!streaming) return;
-    stop(); showMsg('Reconnecting to the TV screen…'); setTimeout(start, 2000);
-  });
   const sync = () => (visible() ? start() : stop());
   async function playback() {
     if (!visible() || status.state !== 'connected') { badge.style.display = 'none'; return; }
@@ -448,13 +527,74 @@ document.addEventListener('keydown', (e) => {
       if (r.screenError && !gotFrame) showMsg('Screen not available: ' + r.screenError);
     } catch { badge.style.display = 'none'; }
   }
-  box.addEventListener('click', () => {
-    const full = !box.classList.contains('full');
+  // Small preview: tap opens the full-screen control view.
+  const setFull = (full) => {
     box.classList.toggle('full', full);
-    if (full && box.requestFullscreen) box.requestFullscreen().catch(() => {});
-    else if (!full && document.fullscreenElement) document.exitFullscreen().catch(() => {});
-  });
+    if (full) {
+      if (box.requestFullscreen) box.requestFullscreen().catch(() => {});
+      try { screen.orientation?.lock?.('landscape').catch(() => {}); } catch {}
+      const hint = $('#screenHint'); hint.style.opacity = 1; setTimeout(() => { hint.style.opacity = 0; }, 3500);
+    } else if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+  };
+  box.addEventListener('click', (e) => { if (!box.classList.contains('full') && !e.target.closest('.ctl')) setFull(true); });
   document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement) box.classList.remove('full'); });
+
+  // Full-screen control: tap = move the TV pointer there and click,
+  // swipe = arrow key, long-press = Back.
+  const gesture = $('#screenGesture');
+  const flash = (t) => { gesture.textContent = t; gesture.classList.remove('show'); void gesture.offsetWidth; gesture.classList.add('show'); };
+  const ripple = (cx, cy) => {
+    const r = box.getBoundingClientRect(), d = document.createElement('div');
+    d.className = 'ripple'; d.style.left = (cx - r.left) + 'px'; d.style.top = (cy - r.top) + 'px';
+    box.appendChild(d); setTimeout(() => d.remove(), 600);
+  };
+  // Where the TV picture actually sits inside the <img> (object-fit: contain).
+  const toTV = (cx, cy) => {
+    const r = img.getBoundingClientRect();
+    const iw = img.naturalWidth || 16, ih = img.naturalHeight || 9;
+    const scale = Math.min(r.width / iw, r.height / ih);
+    const w = iw * scale, h = ih * scale;
+    const x = (cx - r.left - (r.width - w) / 2) / w, y = (cy - r.top - (r.height - h) / 2) / h;
+    return x >= 0 && x <= 1 && y >= 0 && y <= 1 ? { x, y } : null;
+  };
+  let g = null;
+  box.addEventListener('pointerdown', (e) => {
+    if (!box.classList.contains('full') || e.target.closest('.ctl')) return;
+    box.setPointerCapture(e.pointerId);
+    g = { x: e.clientX, y: e.clientY, t: Date.now(), done: false };
+    g.hold = setTimeout(() => { if (g && !g.done) { g.done = true; haptic(); flash('↩'); act('/api/button/BACK'); } }, 600);
+  });
+  box.addEventListener('pointermove', (e) => {
+    if (!g || g.done) return;
+    const dx = e.clientX - g.x, dy = e.clientY - g.y;
+    if (Math.hypot(dx, dy) < 40) return;
+    clearTimeout(g.hold); g.done = true;
+    const k = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'RIGHT' : 'LEFT') : (dy > 0 ? 'DOWN' : 'UP');
+    haptic(); flash({ UP: '↑', DOWN: '↓', LEFT: '←', RIGHT: '→' }[k]); act('/api/button/' + k);
+  });
+  box.addEventListener('pointerup', (e) => {
+    if (!g) return;
+    clearTimeout(g.hold);
+    if (!g.done && Date.now() - g.t < 600) {
+      const p = toTV(e.clientX, e.clientY);
+      if (p) { haptic(); ripple(e.clientX, e.clientY); act('/api/pointer/tap', p); }
+    }
+    g = null;
+  });
+  box.addEventListener('pointercancel', () => { if (g) clearTimeout(g.hold); g = null; });
+  $('#screenCtl').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-ctl]'); if (!b) return;
+    e.stopPropagation(); haptic();
+    const c = b.dataset.ctl;
+    if (c === 'exit') setFull(false);
+    else if (c === 'playpause') act('/api/media/' + (/Playing/.test(badge.textContent) ? 'pause' : 'play'));
+    else if (c === 'volup') act('/api/volume/up');
+    else if (c === 'voldown') act('/api/volume/down');
+    else act('/api/button/' + c);
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && box.classList.contains('full')) { e.preventDefault(); e.stopImmediatePropagation(); setFull(false); }
+  }, true);
   toggle.addEventListener('click', () => {
     enabled = !enabled;
     try { localStorage.setItem('screenPreview', enabled ? 'on' : 'off'); } catch {}
