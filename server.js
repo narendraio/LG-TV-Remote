@@ -125,6 +125,17 @@ app.post('/api/button/:name', wrap(async (req) => { const t = await ensureConnec
 
 app.post('/api/pointer/move', wrap(async (req) => { const t = await ensureConnected(); await t.pointerMove(req.body.dx || 0, req.body.dy || 0, !!req.body.down); }));
 app.post('/api/pointer/click', wrap(async () => { const t = await ensureConnected(); await t.pointerClick(); }));
+// Tap on the live screen: move the TV's pointer to (x, y) in 0..1 screen
+// coordinates and click. POINTER_W/POINTER_H calibrate how many pointer units
+// span the screen if your TV moves the cursor further/shorter than expected.
+const POINTER_W = Number(process.env.POINTER_W || config.pointerW || 1920);
+const POINTER_H = Number(process.env.POINTER_H || config.pointerH || 1080);
+app.post('/api/pointer/tap', wrap(async (req) => {
+  const x = Number(req.body?.x), y = Number(req.body?.y);
+  if (!(x >= 0 && x <= 1 && y >= 0 && y <= 1)) throw new Error('x and y must be between 0 and 1');
+  const t = await ensureConnected();
+  await (req.body?.move ? t.pointerMoveTo(x, y, POINTER_W, POINTER_H) : t.pointerTapAt(x, y, POINTER_W, POINTER_H));
+}));
 app.post('/api/pointer/scroll', wrap(async (req) => { const t = await ensureConnected(); await t.pointerScroll(req.body.dx || 0, req.body.dy || 0); }));
 
 app.post('/api/volume/up', wrap(async () => (await ensureConnected()).volumeUp()));
