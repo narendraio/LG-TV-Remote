@@ -118,7 +118,7 @@ app.post('/api/connect', wrap(async (req) => {
 }));
 
 app.post('/api/disconnect', wrap(async () => { tv?.close(); }));
-app.post('/api/forget', wrap(async () => { tv?.close(); tv = null; config = { ip: null, clientKey: null, mac: null, name: null }; saveConfig(); }));
+app.post('/api/forget', wrap(async () => { tv?.close(); tv = null; config = { ip: null, clientKey: null, mac: null, name: null, shortcuts: config.shortcuts }; saveConfig(); }));
 
 // Remote-control style buttons go through the pointer socket (UP/DOWN/ENTER/BACK/HOME/...)
 app.post('/api/button/:name', wrap(async (req) => { const t = await ensureConnected(); await t.sendButton(req.params.name.toUpperCase()); }));
@@ -297,14 +297,63 @@ app.post('/api/app/close', wrap(async (req) => {
 
 app.post('/api/power/off', wrap(async () => { const t = await ensureConnected(); await t.turnOff(); t.close(); }));
 app.post('/api/power/screen', wrap(async (req) => { const t = await ensureConnected(); return req.body.on ? t.screenOn() : t.screenOff(); }));
-app.post('/api/power/on', wrap(async () => {
+async function sendWake() {
   const mac = config.mac || (config.ip && await macFromArp(config.ip));
   if (!mac) throw new Error('TV MAC address unknown. Connect once while the TV is on, then Wake will work.');
-  config.mac = mac; saveConfig();
+  if (config.mac !== mac) { config.mac = mac; saveConfig(); }
   await wakeOnLan(mac);
+  return mac;
+}
+app.post('/api/power/on', wrap(async () => {
+  const mac = await sendWake();
   // Try to reconnect in the background as the TV boots.
   (async () => { for (let i = 0; i < 12; i++) { await new Promise((r) => setTimeout(r, 4000)); try { await ensureConnected(); return; } catch {} } })();
   return { ok: true, mac };
+}));
+
+// ---------- Wake & go ----------
+// Connect to the TV, waking it with Wake-on-LAN first if it's off, and wait
+// (up to timeoutMs) for it to boot.
+async function wakeAndConnect(timeoutMs = 45_000) {
+  try { return { tv: await ensureConnected(), woke: false }; } catch {}
+  await sendWake();
+  const until = Date.now() + timeoutMs;
+  let resend = Date.now() + 10_000;
+  while (Date.now() < until) {
+    await new Promise((r) => setTimeout(r, 2000));
+    try { return { tv: await ensureConnected(), woke: true }; } catch {}
+    if (Date.now() > resend) { sendWake().catch(() => {}); resend = Date.now() + 10_000; } // packets can get lost
+  }
+  throw new Error('TV did not wake up. Is "Turn on via Wi-Fi" enabled on the TV?');
+}
+// A freshly booted TV may refuse launches for a few seconds, so retry.
+async function openTarget(t, type, target, retries) {
+  for (let i = 0; ; i++) {
+    try { return type === 'input' ? await t.switchInput(target) : await t.launch(target); }
+    catch (e) { if (i >= retries) throw e; await new Promise((r) => setTimeout(r, 2500)); }
+  }
+}
+const shortcuts = () => (Array.isArray(config.shortcuts) ? config.shortcuts : []);
+
+app.get('/api/shortcuts', (req, res) => res.json({ shortcuts: shortcuts() }));
+app.post('/api/shortcuts', wrap(async (req) => {
+  const { name, type, target, icon } = req.body || {};
+  if (!['app', 'input'].includes(type) || !target) throw new Error('type (app|input) and target are required');
+  const sc = { id: crypto.randomBytes(4).toString('hex'), name: String(name || target).slice(0, 40), type, target: String(target), icon: icon ? String(icon) : null };
+  config.shortcuts = [...shortcuts(), sc]; saveConfig();
+  return { ok: true, shortcut: sc };
+}));
+app.delete('/api/shortcuts/:id', wrap(async (req) => {
+  config.shortcuts = shortcuts().filter((s) => s.id !== req.params.id); saveConfig();
+}));
+// POST /api/go { id } for a saved shortcut, or { type, target } directly.
+app.post('/api/go', wrap(async (req) => {
+  const sc = req.body?.id ? shortcuts().find((s) => s.id === req.body.id) : req.body;
+  if (!sc || !['app', 'input'].includes(sc.type) || !sc.target) throw new Error('Unknown shortcut');
+  const started = Date.now();
+  const { tv: t, woke } = await wakeAndConnect();
+  await openTarget(t, sc.type, sc.target, woke ? 4 : 1);
+  return { ok: true, woke, name: sc.name || sc.target, ms: Date.now() - started };
 }));
 
 // ---------- Sleep timer ----------

@@ -24,6 +24,8 @@ Inputs     inputs                  list inputs
            input <name or id>      e.g. input hdmi2
 Text       type <text...>          type into the TV's on-screen keyboard
            toast <message...>      show a notification on the TV
+Wake & go  go <shortcut|app|input>  wake the TV if needed, then open it
+           shortcuts               list saved Wake & open shortcuts
 Other      status
 
 Server:    ${BASE}  (set TV_REMOTE_URL to change; REMOTE_PIN if PIN-protected)`;
@@ -108,6 +110,37 @@ async function main(argv) {
       if (!inp) throw new Error(`No input matches "${args.join(' ')}". Run "tv inputs" to list them.`);
       await call('/api/input', { id: inp.id });
       return console.log(`Switched to ${inp.label}`);
+    }
+    case 'shortcuts': {
+      const { shortcuts } = await call('/api/shortcuts');
+      if (!shortcuts.length) return console.log('No shortcuts yet. Add them in the Apps tab, or use: tv go <app or input>');
+      for (const s of shortcuts) console.log(`${s.name.padEnd(28)} ${s.type}: ${s.target}`);
+      return;
+    }
+    case 'go': {
+      if (!args.length) throw new Error('usage: tv go <shortcut, app or input name>');
+      const q = args.join(' ');
+      const { shortcuts } = await call('/api/shortcuts');
+      const sc = pick(shortcuts, q, ['name', 'target']);
+      let body;
+      if (sc) body = { id: sc.id };
+      else {
+        // Not a saved shortcut: needs the TV on to look up the app/input name,
+        // unless it's an exact id like "netflix" or "HDMI_2".
+        try {
+          const [{ apps }, { inputs }] = await Promise.all([call('/api/apps'), call('/api/inputs')]);
+          const inp = pick(inputs, q, ['id', 'label']);
+          const app = inp ? null : pick(apps, q, ['title', 'id']);
+          if (!inp && !app) throw new Error(`Nothing matches "${q}".`);
+          body = inp ? { type: 'input', target: inp.id, name: inp.label } : { type: 'app', target: app.id, name: app.title };
+        } catch (e) {
+          if (/Nothing matches/.test(e.message)) throw e;
+          body = /^hdmi|^av|^comp/i.test(q) ? { type: 'input', target: q.toUpperCase().replace(/\s+/g, '_'), name: q } : { type: 'app', target: q, name: q };
+        }
+      }
+      console.log('Opening… (waking the TV if it is off)');
+      const r = await call('/api/go', body);
+      return console.log(`${r.name} is on${r.woke ? ` — TV woke in ${Math.round(r.ms / 1000)}s` : ''}`);
     }
     case 'type': return call('/api/text', { text: args.join(' ') });
     case 'toast': return call('/api/toast', { message: args.join(' ') });
