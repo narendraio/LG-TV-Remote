@@ -94,6 +94,18 @@
   .swipe-hint{color:var(--dim);text-align:center;font-size:14px;line-height:1.6;pointer-events:none}
   .swipe-arrow{position:absolute;font-size:64px;color:var(--fg);opacity:0;transition:opacity .25s;pointer-events:none}
   .swipe-arrow.show{opacity:.5;transition:none}
+  .go{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px;margin-bottom:6px}
+  .go button{position:relative;background:var(--btn);border:0;color:var(--fg);border-radius:14px;padding:10px;display:flex;align-items:center;gap:8px;font-size:13px;text-align:left;min-height:56px}
+  .go button:active{background:var(--btn2)}
+  .go img{width:32px;height:32px;border-radius:8px;object-fit:cover;background:#000;flex:none}
+  .go .ico{width:32px;height:32px;border-radius:8px;background:var(--btn2);display:flex;align-items:center;justify-content:center;flex:none}
+  .go span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .go .add{justify-content:center;color:var(--dim);border:1px dashed var(--btn2);background:transparent}
+  .go button.busy{opacity:.6}
+  .sheet{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:60;display:flex;align-items:flex-end;justify-content:center}
+  .sheet[hidden]{display:none}
+  .sheet-card{background:var(--bg);width:100%;max-width:440px;max-height:80vh;overflow:auto;border-radius:18px 18px 0 0;padding:14px 14px calc(env(safe-area-inset-bottom,0px) + 14px)}
+  .sheet-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
   code{background:var(--btn);padding:2px 6px;border-radius:6px;font-size:13px;user-select:text;-webkit-user-select:text}
 </style>
 </head>
@@ -188,6 +200,8 @@
 
 <!-- APPS -->
 <section class="page" id="page-apps">
+  <h3>Wake &amp; open <span style="text-transform:none;letter-spacing:0;font-size:12px">· turns the TV on if needed</span></h3>
+  <div class="go" id="goList"><div class="muted">Loading…</div></div>
   <input type="text" id="appSearch" placeholder="Search apps…" autocomplete="off" style="margin-top:4px">
   <div id="favWrap" style="display:none">
     <h3>Favorites</h3>
@@ -274,6 +288,12 @@
   <div class="muted" style="margin-top:10px">First time: the TV shows a pairing prompt. Choose <b>Yes</b> with the TV's own remote. After that it reconnects automatically.<br><br>For <b>Wake</b> to work while the TV is off, enable <i>Settings → General → Devices → TV On With Mobile → Turn on via Wi‑Fi</i> on the TV (name varies by model).</div>
 </section>
 
+<div class="sheet" id="goSheet" hidden>
+  <div class="sheet-card">
+    <div class="sheet-head"><b>Add a Wake &amp; open shortcut</b><button class="k" style="height:36px;padding:0 12px" onclick="closeGoSheet()">Close</button></div>
+    <div id="goPick" class="list"><div class="muted">Loading…</div></div>
+  </div>
+</div>
 <div class="toast" id="toast"></div>
 
 <script>
@@ -472,9 +492,73 @@ document.addEventListener('keydown', (e) => {
 function showTab(name) {
   document.querySelectorAll('.tabs button').forEach((b) => b.classList.toggle('active', b.dataset.tab === name));
   document.querySelectorAll('.page').forEach((p) => p.classList.toggle('active', p.id === 'page-' + name));
-  if (name === 'apps') { loadApps(); loadNowPlaying(); }
+  if (name === 'apps') { loadApps(); loadNowPlaying(); loadShortcuts(); }
   if (name === 'settings') refreshStatus();
 }
+
+// Wake & open shortcuts (stored on the server, shared by every phone)
+let goShortcuts = [];
+async function loadShortcuts() {
+  try { goShortcuts = (await api('/api/shortcuts', null, 'GET')).shortcuts; } catch { goShortcuts = []; }
+  const el = $('#goList');
+  el.innerHTML = goShortcuts.map((s) => `<button data-go="${esc(s.id)}" title="Long-press for options">${s.icon ? `<img src="${esc(s.icon)}" alt="" onerror="this.style.visibility='hidden'">` : `<div class="ico">${s.type === 'input' ? '⎆' : '▶'}</div>`}<span>${esc(s.name)}</span></button>`).join('')
+    + '<button class="add" onclick="openGoSheet()">+ Add</button>';
+}
+async function runShortcut(id, btn) {
+  const s = goShortcuts.find((x) => x.id === id) || { name: 'shortcut' };
+  btn?.classList.add('busy'); haptic();
+  toast(status.state === 'connected' ? `Opening ${s.name}…` : `Waking TV and opening ${s.name}…`, 6000);
+  try {
+    const r = await api('/api/go', { id });
+    toast(`${r.name} is on${r.woke ? ` (TV woke in ${Math.round(r.ms / 1000)}s)` : ''}`);
+  } catch (e) { toast(e.message, 5000); }
+  btn?.classList.remove('busy'); refreshStatus();
+}
+async function shortcutMenu(id) {
+  const s = goShortcuts.find((x) => x.id === id); if (!s) return;
+  const link = `${location.origin}/?go=${encodeURIComponent(id)}`;
+  const choice = prompt(`"${s.name}"\n\nHome-screen link (open it, then Share → Add to Home Screen):\n${link}\n\nType DELETE to remove this shortcut.`, link);
+  if (choice && choice.trim().toUpperCase() === 'DELETE') { await api('/api/shortcuts/' + encodeURIComponent(id), null, 'DELETE').catch((e) => toast(e.message)); loadShortcuts(); }
+  else if (choice) { try { await navigator.clipboard.writeText(link); toast('Link copied'); } catch {} }
+}
+let goPress, goLong = false;
+document.addEventListener('pointerdown', (e) => {
+  const b = e.target.closest('[data-go]'); if (!b) return;
+  goLong = false; goPress = setTimeout(() => { goLong = true; haptic(); shortcutMenu(b.dataset.go); }, 600);
+});
+['pointerup', 'pointercancel', 'pointerleave'].forEach((ev) => document.addEventListener(ev, () => clearTimeout(goPress), true));
+document.addEventListener('contextmenu', (e) => { const b = e.target.closest('[data-go]'); if (b) { e.preventDefault(); clearTimeout(goPress); goLong = true; shortcutMenu(b.dataset.go); } });
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-go]'); if (!b) return;
+  if (goLong) { goLong = false; return; }
+  runShortcut(b.dataset.go, b);
+});
+async function openGoSheet() {
+  $('#goSheet').hidden = false;
+  const pick = $('#goPick');
+  pick.innerHTML = '<div class="muted">Loading apps and inputs from the TV…</div>';
+  try {
+    const [{ apps }, { inputs }] = await Promise.all([api('/api/apps', null, 'GET'), api('/api/inputs', null, 'GET')]);
+    pick.innerHTML = '<h3>Inputs</h3>' + inputs.map((i) => `<button data-pick-type="input" data-pick-target="${esc(i.id)}" data-pick-name="${esc(i.label)}">${esc(i.label)}<small>${esc(i.id)}</small></button>`).join('')
+      + '<h3>Apps</h3>' + apps.map((a) => `<button data-pick-type="app" data-pick-target="${esc(a.id)}" data-pick-name="${esc(a.title)}" data-pick-icon="${esc(a.icon)}">${esc(a.title)}<small>${esc(a.id)}</small></button>`).join('');
+  } catch (e) { pick.innerHTML = `<div class="muted">The TV needs to be on to pick an app or input. (${esc(e.message)})</div>`; }
+}
+function closeGoSheet() { $('#goSheet').hidden = true; }
+$('#goSheet').addEventListener('click', async (e) => {
+  if (e.target.id === 'goSheet') return closeGoSheet();
+  const b = e.target.closest('[data-pick-type]'); if (!b) return;
+  try {
+    await api('/api/shortcuts', { type: b.dataset.pickType, target: b.dataset.pickTarget, name: b.dataset.pickName, icon: b.dataset.pickIcon || null });
+    toast('Added ' + b.dataset.pickName); closeGoSheet(); loadShortcuts();
+  } catch (err) { toast(err.message); }
+});
+// Opened from a home-screen shortcut: /?go=<id>
+(() => {
+  const id = new URLSearchParams(location.search).get('go');
+  if (!id) return;
+  history.replaceState(null, '', '/');
+  (async () => { await loadShortcuts(); runShortcut(id); })();
+})();
 
 // Now playing / close app
 async function loadNowPlaying() {

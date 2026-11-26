@@ -69,6 +69,10 @@ On macOS you can also double-click `start.command`.
 
 The pairing key is saved to `config.json` (git-ignored), so it reconnects automatically afterwards. See `config.example.json` for the format.
 
+## Wake & open
+
+In the **Apps** tab, add shortcuts like "JioHotstar" or "HDMI 2 (set-top box)". One tap turns the TV on if it's off, waits for it to boot and opens that app or input. Long-press a shortcut to copy a link you can add to your phone's home screen, or use the CLI: `npm run tv -- go hotstar`.
+
 ## Wake from off
 
 The **Wake** button sends a Wake-on-LAN packet. On the TV enable
