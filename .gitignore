@@ -17,3 +17,6 @@ Thumbs.db
 # Env
 .env
 .env.*
+
+# Screen time history
+usage.json

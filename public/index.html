@@ -94,6 +94,27 @@
   .swipe-hint{color:var(--dim);text-align:center;font-size:14px;line-height:1.6;pointer-events:none}
   .swipe-arrow{position:absolute;font-size:64px;color:var(--fg);opacity:0;transition:opacity .25s;pointer-events:none}
   .swipe-arrow.show{opacity:.5;transition:none}
+  .cmd{display:flex;gap:8px;margin-bottom:10px}
+  .cmd input[type=text]{margin:0;flex:1;padding:12px 14px}
+  .cmd button{flex:0 0 48px;height:46px;border-radius:12px}
+  .cmd button.listening{background:var(--accent);color:#fff;animation:blink 1s infinite}
+  .form-row{display:grid;grid-template-columns:1fr 1fr 72px;gap:10px;margin-bottom:10px}
+  .form-row input,.form-row select{width:100%;background:var(--btn);border:0;border-radius:12px;color:var(--fg);padding:0 12px;height:50px;font-size:16px;font-family:inherit;-webkit-appearance:none;appearance:none}
+  .form-row button.k{height:50px}
+  .days{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin-bottom:10px}
+  .days button{background:var(--btn);border:0;color:var(--dim);border-radius:10px;height:38px;font-size:13px;font-weight:600;cursor:pointer}
+  .days button.on{background:var(--btn2);color:var(--fg)}
+  .sched{display:flex;align-items:center;gap:10px;background:var(--btn);border-radius:12px;padding:10px 12px;margin-bottom:8px}
+  .sched .t{font-size:20px;font-weight:600;font-variant-numeric:tabular-nums;min-width:62px}
+  .sched .d{flex:1;font-size:13px;color:var(--dim);line-height:1.35}.sched .d b{color:var(--fg);font-weight:500}
+  .sched.off{opacity:.5}
+  .sched button{background:var(--btn2);border:0;color:var(--fg);border-radius:9px;height:34px;padding:0 10px;font-size:13px;cursor:pointer}
+  .st-row{margin-bottom:10px}
+  .st-row .top{display:flex;justify-content:space-between;font-size:14px;margin-bottom:4px;gap:8px}
+  .st-row .top span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .st-row .top span:last-child{color:var(--dim);font-variant-numeric:tabular-nums;flex:none}
+  .st-bar{height:8px;background:var(--btn);border-radius:4px;overflow:hidden}.st-bar i{display:block;height:100%;background:var(--accent);border-radius:4px}
+  .st-total{font-size:26px;font-weight:600;margin:2px 0 10px}
   code{background:var(--btn);padding:2px 6px;border-radius:6px;font-size:13px;user-select:text;-webkit-user-select:text}
 </style>
 </head>
@@ -103,6 +124,10 @@
   <div class="status" onclick="showTab('settings')"><span class="dot" id="dot"></span><span id="stateText">not connected</span></div>
 </header>
 <div class="banner" id="banner"></div>
+<form class="cmd" id="cmdForm" autocomplete="off">
+  <input type="text" id="cmdText" placeholder="Say or type: “open Netflix”, “volume 20”…" enterkeyhint="go" aria-label="Command">
+  <button type="button" class="k" id="cmdMic" title="Speak a command" aria-label="Speak a command"><svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></button>
+</form>
 <div class="tabs">
   <button class="active" data-tab="remote" onclick="showTab('remote')">Remote</button>
   <button data-tab="swipe" onclick="showTab('swipe')">Swipe</button>
@@ -235,6 +260,7 @@
     <button class="k" data-api="/api/power/screen" data-body='{"on":true}'>Screen on</button>
     <button class="k" onclick="sendToast()">Toast</button>
   </div>
+  <button class="k" onclick="saveSnapshot()" style="width:100%;height:50px;margin-bottom:10px">Save screenshot</button>
   <h3>Sleep timer</h3>
   <div class="muted" id="sleepInfo" style="margin-bottom:10px">Off</div>
   <div class="row row4">
@@ -247,6 +273,22 @@
     <button class="k" onclick="setSleep(customSleep())">Custom…</button>
     <button class="k" data-sleep="0" style="grid-column:span 2">Cancel timer</button>
   </div>
+  <h3>Schedules</h3>
+  <div id="schedList"><div class="muted">Loading…</div></div>
+  <div class="form-row">
+    <input type="time" id="schedTime" value="07:00" aria-label="Time">
+    <select id="schedAction" aria-label="Action"><option value="on">Turn on</option><option value="off">Turn off</option></select>
+    <button class="k" onclick="addSchedule()">Add</button>
+  </div>
+  <div class="days" id="schedDays"></div>
+  <div class="muted" id="schedNote" style="margin-bottom:10px"></div>
+  <h3>Screen time</h3>
+  <div class="seg" id="stSeg">
+    <button data-st="1" class="active">Today</button>
+    <button data-st="7">Last 7 days</button>
+  </div>
+  <div class="st-total" id="stTotal">–</div>
+  <div id="stList"></div>
 </section>
 
 <!-- SETTINGS -->
@@ -257,6 +299,13 @@
     <button data-theme-opt="light">Light</button>
     <button data-theme-opt="dark">Dark</button>
   </div>
+  <h3>Volume limit</h3>
+  <div class="vol">
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+    <input type="range" id="limitSlider" min="5" max="100" step="1" value="100" aria-label="Maximum volume">
+    <span class="v" id="limitValue" style="min-width:42px">Off</span>
+  </div>
+  <div class="muted" style="margin-bottom:4px">The TV is turned back down to this level, even when someone uses the TV's own remote. Slide to the end for no limit.</div>
   <h3>TV</h3>
   <div class="muted" id="tvInfo">No TV configured.</div>
   <div style="height:10px"></div>
@@ -387,7 +436,7 @@ document.addEventListener('pointerdown', (e) => {
 
 // Keyboard shortcuts on the Mac
 document.addEventListener('keydown', (e) => {
-  if (e.target.tagName === 'INPUT') return;
+  if (/^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return;
   const map = { ArrowUp: 'UP', ArrowDown: 'DOWN', ArrowLeft: 'LEFT', ArrowRight: 'RIGHT', Enter: 'ENTER', Backspace: 'BACK', Escape: 'EXIT', h: 'HOME', m: 'MUTE', ' ': null };
   if (e.key === '+' || e.key === '=') { e.preventDefault(); return act('/api/volume/up'); }
   if (e.key === '-' || e.key === '_') { e.preventDefault(); return act('/api/volume/down'); }
@@ -473,7 +522,8 @@ function showTab(name) {
   document.querySelectorAll('.tabs button').forEach((b) => b.classList.toggle('active', b.dataset.tab === name));
   document.querySelectorAll('.page').forEach((p) => p.classList.toggle('active', p.id === 'page-' + name));
   if (name === 'apps') { loadApps(); loadNowPlaying(); }
-  if (name === 'settings') refreshStatus();
+  if (name === 'settings') { refreshStatus(); loadVolumeLimit(); }
+  if (name === 'more') { loadSchedules(); loadScreenTime(); }
 }
 
 // Now playing / close app
@@ -689,6 +739,151 @@ $('#castUrl').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.pr
   $('#castUrl').value = shared;
   castLink(shared);
 })();
+
+// ---------- Voice & text commands ----------
+(() => {
+  const form = $('#cmdForm'), input = $('#cmdText'), mic = $('#cmdMic');
+  async function run(text) {
+    text = text.trim(); if (!text) return;
+    haptic();
+    try { const r = await api('/api/command', { text }); toast(r.did); input.value = ''; input.blur(); setTimeout(window.refreshVolume, 400); }
+    catch (e) { toast(e.message, 3000); }
+    refreshStatus();
+  }
+  form.addEventListener('submit', (e) => { e.preventDefault(); run(input.value); });
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  let rec = null;
+  mic.addEventListener('click', () => {
+    // Browsers only allow the microphone on https or localhost. On plain http the
+    // keyboard's own dictation key still works, so point people to that.
+    if (!SR || !window.isSecureContext) {
+      input.focus();
+      toast('Tap the 🎤 on your keyboard and speak, then press Go', 3500);
+      return;
+    }
+    if (rec) { rec.stop(); return; }
+    rec = new SR();
+    rec.lang = navigator.language || 'en-US';
+    rec.interimResults = true;
+    rec.maxAlternatives = 1;
+    mic.classList.add('listening');
+    let finalText = '';
+    rec.onresult = (e) => {
+      const r = e.results[e.results.length - 1];
+      input.value = r[0].transcript;
+      if (r.isFinal) finalText = r[0].transcript;
+    };
+    rec.onerror = (e) => { if (e.error !== 'no-speech' && e.error !== 'aborted') toast('Microphone: ' + e.error); };
+    rec.onend = () => { mic.classList.remove('listening'); rec = null; if (finalText) run(finalText); };
+    try { rec.start(); toast('Listening…', 1200); } catch { mic.classList.remove('listening'); rec = null; }
+  });
+})();
+
+// ---------- Save a screenshot of the TV ----------
+async function saveSnapshot() {
+  haptic();
+  try {
+    const headers = {}; const pin = pinStore.get(); if (pin) headers['x-remote-pin'] = pin;
+    const r = await fetch('/api/screen', { headers });
+    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'Screen not available');
+    const blob = await r.blob();
+    const d = new Date(), p = (x) => String(x).padStart(2, '0');
+    const name = `tv-${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}.jpg`;
+    const file = new File([blob], name, { type: 'image/jpeg' });
+    // Phones: the share sheet lets people save to Photos. Elsewhere: a normal download.
+    if (matchMedia('(pointer: coarse)').matches && navigator.canShare && navigator.canShare({ files: [file] })) {
+      try { await navigator.share({ files: [file] }); return; } catch (e) { if (e.name === 'AbortError') return; }
+    }
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
+    toast('Screenshot saved');
+  } catch (e) { toast(e.message); }
+}
+
+// ---------- Volume limit ----------
+(() => {
+  const slider = $('#limitSlider'), label = $('#limitValue');
+  const show = (v) => { label.textContent = v >= 100 ? 'Off' : 'Max ' + v; };
+  let timer;
+  window.loadVolumeLimit = async () => {
+    try { const r = await api('/api/volume-limit', null, 'GET'); slider.value = r.max ?? 100; show(Number(slider.value)); } catch {}
+  };
+  slider.addEventListener('input', () => {
+    show(Number(slider.value));
+    clearTimeout(timer);
+    timer = setTimeout(async () => {
+      const v = Number(slider.value);
+      try { await api('/api/volume-limit', { max: v >= 100 ? null : v }); toast(v >= 100 ? 'Volume limit off' : `Volume limited to ${v}`); setTimeout(window.refreshVolume, 500); }
+      catch (e) { toast(e.message); }
+    }, 400);
+  });
+  loadVolumeLimit();
+})();
+
+// ---------- Schedules ----------
+const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+let schedDays = new Set([0, 1, 2, 3, 4, 5, 6]);
+function renderDayPicker() {
+  // Monday first
+  $('#schedDays').innerHTML = [1, 2, 3, 4, 5, 6, 0].map((d) => `<button type="button" data-day="${d}" class="${schedDays.has(d) ? 'on' : ''}">${DAY_NAMES[d].slice(0, 2)}</button>`).join('');
+}
+function daysLabel(days) {
+  const k = [...days].sort().join('');
+  if (k === '0123456') return 'Every day';
+  if (k === '12345') return 'Weekdays';
+  if (k === '06') return 'Weekends';
+  return [1, 2, 3, 4, 5, 6, 0].filter((d) => days.includes(d)).map((d) => DAY_NAMES[d]).join(', ');
+}
+async function loadSchedules() {
+  try {
+    const r = await api('/api/schedules', null, 'GET');
+    $('#schedList').innerHTML = r.schedules.map((s) => `<div class="sched${s.enabled ? '' : ' off'}">
+        <div class="t">${esc(s.time)}</div>
+        <div class="d"><b>Turn ${s.action === 'on' ? 'on' : 'off'}</b><br>${esc(daysLabel(s.days))}</div>
+        <button data-sched-toggle="${esc(s.id)}" data-enabled="${s.enabled}">${s.enabled ? 'Pause' : 'Resume'}</button>
+        <button data-sched-del="${esc(s.id)}" aria-label="Delete">✕</button>
+      </div>`).join('') || '<div class="muted" style="margin-bottom:10px">No schedules yet. Pick a time and days below.</div>';
+    $('#schedNote').textContent = `Times use the server's clock (${r.timeZone}, now ${r.serverTime}). "Turn on" needs Wake to work.`;
+  } catch (e) { $('#schedList').innerHTML = `<div class="muted">${esc(e.message)}</div>`; }
+}
+async function addSchedule() {
+  const time = $('#schedTime').value, action = $('#schedAction').value;
+  if (!time) return toast('Pick a time');
+  if (!schedDays.size) return toast('Pick at least one day');
+  haptic();
+  try { await api('/api/schedules', { time, action, days: [...schedDays] }); toast(`TV will turn ${action} at ${time}`); loadSchedules(); }
+  catch (e) { toast(e.message); }
+}
+document.addEventListener('click', async (e) => {
+  const day = e.target.closest('[data-day]');
+  if (day) { const d = Number(day.dataset.day); schedDays.has(d) ? schedDays.delete(d) : schedDays.add(d); renderDayPicker(); return; }
+  const tog = e.target.closest('[data-sched-toggle]');
+  if (tog) { try { await api('/api/schedules/' + tog.dataset.schedToggle, { enabled: tog.dataset.enabled !== 'true' }, 'PATCH'); } catch (err) { toast(err.message); } loadSchedules(); return; }
+  const del = e.target.closest('[data-sched-del]');
+  if (del && confirm('Delete this schedule?')) { try { await api('/api/schedules/' + del.dataset.schedDel, null, 'DELETE'); } catch (err) { toast(err.message); } loadSchedules(); }
+});
+renderDayPicker();
+
+// ---------- Screen time ----------
+let stDays = 1;
+const fmtDur = (sec) => { const h = Math.floor(sec / 3600), m = Math.round((sec % 3600) / 60); return h ? `${h}h ${m}m` : `${m}m`; };
+async function loadScreenTime() {
+  try {
+    const r = await api('/api/screentime?days=' + stDays, null, 'GET');
+    $('#stTotal').textContent = r.totalSec ? fmtDur(r.totalSec) + (stDays > 1 && r.totalSec / stDays >= 60 ? ` · ${fmtDur(r.totalSec / stDays)}/day` : '') : '0m';
+    const top = r.apps[0]?.sec || 1;
+    $('#stList').innerHTML = r.apps.slice(0, 12).map((a) => `<div class="st-row"><div class="top"><span>${esc(a.title)}</span><span>${fmtDur(a.sec)}</span></div><div class="st-bar"><i style="width:${Math.max(2, Math.round((a.sec / top) * 100))}%"></i></div></div>`).join('')
+      || '<div class="muted">Nothing recorded yet. Screen time is counted while this server is running and the TV is on.</div>';
+  } catch (e) { $('#stList').innerHTML = `<div class="muted">${esc(e.message)}</div>`; }
+}
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-st]'); if (!b) return;
+  stDays = Number(b.dataset.st);
+  document.querySelectorAll('[data-st]').forEach((x) => x.classList.toggle('active', x === b));
+  loadScreenTime();
+});
 
 refreshStatus();
 setInterval(refreshStatus, 5000);
