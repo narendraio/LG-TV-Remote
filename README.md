@@ -16,6 +16,11 @@ Control an LG webOS TV from any browser on the same Wi‑Fi. A tiny Node.js serv
 - Automatic TV discovery (SSDP + network scan)
 - Keyboard shortcuts on desktop
 - **Live view of the TV screen** on your phone (~1 fps, no audio) with playing/paused status
+- **Voice & text commands**: “open Netflix”, “volume 20”, “switch to HDMI 2”, “turn off in 30 minutes”
+- **Save a screenshot** of what's on the TV
+- **Schedules**: turn the TV on or off at set times on chosen days
+- **Volume limit**: caps the volume, even from the TV's own remote
+- **Screen time**: how long each app was on, today or over the last 7 days
 - No cloud, no account — everything stays on your local network
 
 ## Requirements
@@ -84,6 +89,11 @@ npm run tv -- volume 20
 npm run tv -- launch netflix
 npm run tv -- input hdmi2
 npm run tv -- off
+npm run tv -- do switch to hdmi 2       # any voice command
+npm run tv -- screenshot tv.jpg
+npm run tv -- schedule 23:30 off weekdays
+npm run tv -- limit 30
+npm run tv -- screentime 7
 npm run tv -- help        # all commands
 ```
 
@@ -91,6 +101,32 @@ Run `npm link` once to get a global `tv` command (`tv mute`, `tv home`, …).
 To control a server on another machine, set `TV_REMOTE_URL=http://192.168.1.10:8080`.
 
 Every action is also a plain HTTP call, e.g. `curl -X POST http://localhost:8080/api/button/HOME`.
+
+## Voice & text commands
+
+Type into the box at the top of the page, or tap the 🎤 and speak. Examples:
+
+| Say | Does |
+|---|---|
+| `open netflix`, `youtube`, `play jiohotstar` | open an app (fuzzy match) |
+| `switch to hdmi 2`, `live tv` | change input |
+| `volume 20`, `louder`, `volume down by 5`, `mute` | volume |
+| `pause`, `play`, `fast forward` | media |
+| `home`, `back`, `ok`, `down 3` | remote keys |
+| `channel 105`, `next channel` | channels |
+| `type cricket highlights` | type into the TV keyboard |
+| `turn off`, `turn on`, `screen off` | power |
+| `turn off in 30 minutes`, `cancel sleep` | sleep timer |
+
+Browsers only allow the microphone on `https` or `localhost`. Over plain `http://<computer-ip>:8080` on a phone, use the microphone key on your phone's keyboard instead; the 🎤 button tells you so. From a terminal: `tv do open netflix`.
+
+## Schedules, volume limit and screen time
+
+- **Schedules** (More tab): pick a time, *Turn on* / *Turn off* and the days. Times use the server computer's clock. In Docker, set `TZ` (e.g. `TZ: "Asia/Kolkata"`) in `docker-compose.yml`. *Turn on* uses Wake-on-LAN, so set that up first (see below).
+- **Volume limit** (Setup tab): if anyone turns the volume above the limit, including with the TV's own remote, it's turned back down.
+- **Screen time** (More tab): while the server is running and the TV is on, it records which app is on screen every 30 seconds. Stored in `usage.json` next to `config.json` (last 35 days only, never leaves your computer).
+
+Schedules and the volume limit are saved in `config.json` and kept when you **Forget** the TV.
 
 ## Keyboard shortcuts (desktop)
 
